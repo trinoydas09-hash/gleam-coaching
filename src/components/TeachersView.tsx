@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { loadTeachers } from '../lib/publicData';
 import { Mail, Phone, Award, BookOpen, Clock, Briefcase } from 'lucide-react';
 
 export const TeachersView: React.FC = () => {
@@ -6,15 +7,7 @@ export const TeachersView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    fetch('/api/teachers')
-      .then(res => res.json())
-      .then(data => {
-        const activeOnly = data
-          .filter((t: any) => t.isActive !== false)
-          .sort((a: any, b: any) => (a.displayOrder || 0) - (b.displayOrder || 0));
-        setTeachers(activeOnly);
-      })
-      .catch(() => {});
+    loadTeachers().then(setTeachers).catch(() => setTeachers([]));
   }, []);
 
   const filteredTeachers = teachers.filter(t => 

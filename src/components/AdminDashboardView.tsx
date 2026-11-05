@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 import { 
   LayoutDashboard, Users, BookOpen, Calendar, Award, FileText, 
   Settings, LogOut, ShieldCheck, Plus, Trash2, Edit, CheckCircle2, AlertCircle, Code, UserCheck, Clock, X, Search, Upload, Download, Pin, Eye, Image as ImageIcon, Briefcase, ExternalLink, RefreshCw, Key, Archive, FileUp, Phone, MapPin, Mail, Camera, GraduationCap, ChevronUp, ChevronDown
@@ -215,7 +216,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
     guardianMobile: '',
     guardianRelationship: 'Father',
     guardianAddress: '',
-    pin: '1234',
     status: 'Active'
   });
 
@@ -243,7 +243,33 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
     fetch('/api/notices').then(res => res.json()).then(data => setNotices(data)).catch(() => {});
     fetch('/api/testimonials').then(res => res.json()).then(data => setTestimonials(data)).catch(() => {});
     fetch('/api/farewell/albums').then(res => res.json()).then(data => setFarewellAlbums(data || [])).catch(() => {});
-    fetch('/api/students').then(res => res.json()).then(data => setStudents(data)).catch(() => {});
+    if (supabase) {
+      supabase.from('students')
+        .select('id,student_id,full_name,date_of_birth,gender,student_phone,email,address,class_level,group_name,session,admission_date,guardian_name,guardian_phone,relationship,status,created_at')
+        .order('created_at', { ascending: false })
+        .then(({ data, error }) => {
+          if (error) return showError('Unable to load student records: ' + error.message);
+          setStudents((data || []).map((row: any) => ({
+            uuid: row.id,
+            id: row.student_id,
+            name: row.full_name,
+            dob: row.date_of_birth || '',
+            gender: row.gender || 'Male',
+            mobile: row.student_phone || '',
+            email: row.email || '',
+            address: row.address || '',
+            classLevel: row.class_level ? 'Class ' + row.class_level : '',
+            group: row.group_name || '',
+            academicSession: row.session || '',
+            admissionDate: row.admission_date || '',
+            guardianName: row.guardian_name || '',
+            guardianMobile: row.guardian_phone || '',
+            guardianRelationship: row.relationship || '',
+            guardianAddress: '',
+            status: (row.status || 'active').toLowerCase() === 'active' ? 'Active' : 'Inactive',
+          })));
+        });
+    }
     fetch('/api/verification-logs').then(res => res.json()).then(data => setLogs(data)).catch(() => {});
     fetch('/api/settings').then(res => res.json()).then(data => {
       setSettings(data);
@@ -879,40 +905,47 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
   });
 
   // ==================== 8. COMPLETE STUDENTS (GOOGLE SHEETS) MANAGEMENT ====================
-  const handleSaveStudent = (e: React.FormEvent) => {
+  const handleSaveStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!studentForm.name.trim() || !studentForm.id.trim()) {
       return showError("Student ID and Full Name are required.");
     }
+    if (!supabase) return showError("Supabase is not configured.");
 
-    // Client-side duplicate ID check when creating new student
-    if (!editingStudent) {
-      const exists = students.some(s => s.id.toUpperCase() === studentForm.id.trim().toUpperCase());
-      if (exists) {
-        return showError(`Student ID "${studentForm.id}" already exists! Please use a unique Student ID.`);
-      }
+    const studentRecord = {
+      student_id: studentForm.id.trim(),
+      full_name: studentForm.name.trim(),
+      date_of_birth: studentForm.dob || null,
+      gender: studentForm.gender || null,
+      student_phone: studentForm.mobile || null,
+      email: studentForm.email || null,
+      address: studentForm.address || null,
+      class_level: Number.parseInt(String(studentForm.classLevel).replace(/\D/g, ''), 10) || null,
+      group_name: studentForm.group || null,
+      session: studentForm.academicSession || null,
+      admission_date: studentForm.admissionDate || null,
+      guardian_name: studentForm.guardianName || null,
+      guardian_phone: studentForm.guardianMobile || null,
+      relationship: studentForm.guardianRelationship || null,
+      status: studentForm.status.toLowerCase(),
+    };
+
+    const request = editingStudent
+      ? supabase.from('students').update(studentRecord).eq('student_id', editingStudent.id)
+      : supabase.from('students').insert(studentRecord);
+
+    const { error } = await request;
+    if (error) {
+      showError(error.message.includes('duplicate') ? 'This Student ID already exists.' : 'Unable to save student: ' + error.message);
+      return;
     }
 
-    const url = editingStudent ? `/api/students/${editingStudent.id}` : '/api/students';
-    const method = editingStudent ? 'PUT' : 'POST';
-
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(studentForm)
-    })
-      .then(async res => {
-        const data = await res.json();
-        if (res.ok && (data.success || data.id)) {
-          showSuccess(editingStudent ? `Student profile for "${studentForm.name}" updated successfully!` : `New student "${studentForm.name}" registered successfully!`);
-          setEditingStudent(null);
-          setStudentSubTab('all');
-          loadAllData();
-        } else {
-          showError(data.error || "Failed to save student record.");
-        }
-      })
-      .catch(err => showError("Network error saving student record: " + err.message));
+    showSuccess(editingStudent
+      ? `Student profile for "${studentForm.name}" updated successfully.`
+      : `Student "${studentForm.name}" registered. Set a 6-digit PIN using Reset PIN before portal access.`);
+    setEditingStudent(null);
+    setStudentSubTab('all');
+    loadAllData();
   };
 
   const handleEditStudentClick = (st: any) => {
@@ -933,46 +966,42 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
       guardianMobile: st.guardianMobile || '',
       guardianRelationship: st.guardianRelationship || 'Father',
       guardianAddress: st.guardianAddress || '',
-      pin: st.pin || '1234',
       status: st.status || 'Active'
     });
     setStudentSubTab('add');
   };
 
-  const handleDeleteStudentClick = (id: string, name: string) => {
-    if (confirm(`Are you sure you want to delete student profile for "${name}" (${id})?`)) {
-      fetch(`/api/students/${id}`, { method: 'DELETE' }).then(() => {
-        showSuccess(`Student profile deleted.`);
-        loadAllData();
-      });
-    }
+  const handleDeleteStudentClick = async (id: string, name: string) => {
+    if (!supabase || !confirm(`Are you sure you want to delete student profile for "${name}" (${id})?`)) return;
+    const { error } = await supabase.from('students').delete().eq('student_id', id);
+    if (error) return showError('Unable to delete student: ' + error.message);
+    showSuccess('Student profile deleted.');
+    loadAllData();
   };
 
-  const handleToggleStudentStatus = (st: any) => {
-    const newStatus = st.status === 'Active' ? 'Inactive' : 'Active';
-    fetch(`/api/students/${st.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus })
-    }).then(() => {
-      showSuccess(`Student ${st.name} is now ${newStatus}.`);
-      loadAllData();
-    });
+  const handleToggleStudentStatus = async (st: any) => {
+    if (!supabase) return showError('Supabase is not configured.');
+    const newStatus = st.status === 'Active' ? 'inactive' : 'active';
+    const { error } = await supabase.from('students').update({ status: newStatus }).eq('student_id', st.id);
+    if (error) return showError('Unable to update student status: ' + error.message);
+    showSuccess(`Student ${st.name} is now ${newStatus === 'active' ? 'Active' : 'Inactive'}.`);
+    loadAllData();
   };
 
-  const handleResetStudentPin = (e: React.FormEvent) => {
+  const handleResetStudentPin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pinResetStudent || !newPinInput.trim()) return;
-    fetch(`/api/students/${pinResetStudent.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: newPinInput.trim() })
-    }).then(() => {
-      showSuccess(`PIN updated successfully for student ${pinResetStudent.name}!`);
-      setPinResetStudent(null);
-      setNewPinInput('');
-      loadAllData();
+    if (!pinResetStudent || !/^\d{6}$/.test(newPinInput)) {
+      return showError('Enter exactly 6 digits for the student PIN.');
+    }
+    if (!supabase) return showError('Supabase is not configured.');
+    const { error } = await supabase.rpc('set_student_pin', {
+      p_student_id: pinResetStudent.id,
+      p_pin: newPinInput,
     });
+    if (error) return showError('Unable to reset PIN: ' + error.message);
+    showSuccess(`6-digit PIN updated for student ${pinResetStudent.name}.`);
+    setPinResetStudent(null);
+    setNewPinInput('');
   };
 
   const filteredStudentsList = students.filter(st => {
@@ -2929,8 +2958,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
               <p className="text-xs text-slate-500">Student ID: <strong className="font-mono text-slate-900">{pinResetStudent.id}</strong></p>
               <form onSubmit={handleResetStudentPin} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase mb-1">New 4-Digit PIN</label>
-                  <input type="text" required placeholder="Enter new PIN" value={newPinInput} onChange={e => setNewPinInput(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border rounded-xl text-sm font-mono text-center" />
+                  <label className="block text-xs font-bold uppercase mb-1">New 6-Digit PIN</label>
+                  <input type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="new-password" required placeholder="Enter 6-digit PIN" value={newPinInput} onChange={e => setNewPinInput(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border rounded-xl text-sm font-mono text-center" />
                 </div>
                 <div className="flex justify-end gap-2">
                   <button type="button" onClick={() => setPinResetStudent(null)} className="px-4 py-2 bg-slate-100 text-xs font-bold rounded-xl">Cancel</button>

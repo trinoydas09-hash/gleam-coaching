@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { loadCourses } from '../lib/publicData';
 import { BookOpen, Calendar, Clock, CheckCircle2, ArrowRight, UserCheck } from 'lucide-react';
 
 interface CoursesViewProps {
@@ -11,15 +12,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ setCurrentView }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    fetch('/api/courses')
-      .then(res => res.json())
-      .then(data => {
-        const activeOnly = data
-          .filter((c: any) => c.status === 'Active')
-          .sort((a: any, b: any) => (a.displayOrder || 0) - (b.displayOrder || 0));
-        setCourses(activeOnly);
-      })
-      .catch(() => {});
+    loadCourses().then(setCourses).catch(() => setCourses([]));
   }, []);
 
   const classFilters = ['All', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];

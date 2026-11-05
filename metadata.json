@@ -1,0 +1,6 @@
+{
+  "name": "Gleam Coaching",
+  "description": "Gleam Coaching - Quality Education, Experienced Teachers, Regular Assessments and Continuous Academic Support for Classes 6–12. Iqbal Road, Kotwali, Chattogram, Bangladesh.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

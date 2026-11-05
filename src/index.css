@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-blackboard: #123B2A;
+    --bg-deep-green: #0B241B;
+    --bg-soft: #F5F7F5;
+    --text-charcoal: #171C19;
+    --text-muted: #737B75;
+  }
+  
+  body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background-color: var(--bg-soft);
+    color: var(--text-charcoal);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Bricolage Grotesque', sans-serif;
+  }
+}

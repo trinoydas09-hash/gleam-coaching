@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Lock, Mail, AlertCircle } from 'lucide-react';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
 interface AdminLoginViewProps {
   onAdminLoginSuccess: (admin: any) => void;
@@ -7,34 +8,52 @@ interface AdminLoginViewProps {
 }
 
 export const AdminLoginView: React.FC<AdminLoginViewProps> = ({ onAdminLoginSuccess, setCurrentView }) => {
-  const [email, setEmail] = useState('admin@gleamcoaching.com');
-  const [password, setPassword] = useState('gleam2026');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
 
-    fetch('/api/admin/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    })
-      .then(async res => {
-        const data = await res.json();
-        if (res.ok && data.success) {
-          localStorage.setItem('gleam_admin_token', data.token);
-          localStorage.setItem('gleam_admin_user', JSON.stringify(data.admin));
-          onAdminLoginSuccess(data.admin);
-          setCurrentView('admin-dashboard');
-        } else {
-          setError(data.error || "Invalid admin credentials.");
-        }
-      })
-      .catch(() => setError("Network error during login."))
-      .finally(() => setLoading(false));
+    if (!isSupabaseConfigured || !supabase) {
+      setError('Supabase is not configured. Add the project URL and publishable key to the deployment environment.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (authError || !authData.user) {
+        setError(authError?.message || 'Invalid email or password.');
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, full_name, role')
+        .eq('id', authData.user.id)
+        .maybeSingle();
+
+      if (profileError || !profile || profile.role !== 'admin') {
+        await supabase.auth.signOut();
+        setError('This account is not authorized for the Gleam Coaching admin dashboard.');
+        return;
+      }
+
+      onAdminLoginSuccess({
+        id: authData.user.id,
+        email: authData.user.email,
+        name: profile.full_name || authData.user.email,
+        role: profile.role,
+      });
+      setCurrentView('admin-dashboard');
+    } catch {
+      setError('Unable to sign in right now. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -62,6 +81,7 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({ onAdminLoginSucc
               <input
                 type="email"
                 required
+                autoComplete="username"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
@@ -78,6 +98,7 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({ onAdminLoginSucc
               <input
                 type="password"
                 required
+                autoComplete="current-password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
@@ -97,15 +118,12 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({ onAdminLoginSucc
             disabled={loading}
             className="w-full py-3.5 bg-[#123B2A] hover:bg-[#0B241B] text-white font-bold rounded-xl transition-colors shadow-md text-sm flex items-center justify-center gap-2"
           >
-            {loading ? "Authenticating..." : "Login to Dashboard"}
+            {loading ? 'Authenticating...' : 'Login to Dashboard'}
           </button>
         </form>
-
-        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-600 space-y-1">
-          <p className="font-bold text-slate-900">Default Admin Credentials:</p>
-          <p>Email: <strong className="text-slate-800">admin@gleamcoaching.com</strong></p>
-          <p>Password: <strong className="text-slate-800">gleam2026</strong></p>
-        </div>
+        <p className="text-xs text-slate-500 text-center">
+          Sign in with an administrator account created in Supabase Authentication.
+        </p>
       </div>
     </div>
   );

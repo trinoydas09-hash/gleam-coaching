@@ -148,6 +148,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
     totalMarks: 100,
     grade: '',
     remarks: '',
+    resultFilePath: '',
+    resultFileType: '',
+    googleSheetUrl: '',
     status: 'Draft'
   });
 
@@ -293,6 +296,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
             examTitle: row.exam_title || '', subject: row.subject || '',
             obtainedMarks: Number(row.marks_obtained || 0), totalMarks: Number(row.total_marks || 0),
             grade: row.grade || '', remarks: row.remarks || '',
+            resultFilePath: row.result_file_path || '', resultFileType: row.result_file_type || '',
+            googleSheetUrl: row.google_sheet_url || '',
             status: row.published_at ? 'Published' : 'Draft', publishedAt: row.published_at,
           })));
         });
@@ -744,6 +749,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
         total_marks: Number(resultForm.totalMarks),
         grade: resultForm.grade.trim() || null,
         remarks: resultForm.remarks.trim() || null,
+        result_file_path: resultForm.resultFilePath || null,
+        result_file_type: resultForm.resultFileType || null,
+        google_sheet_url: resultForm.googleSheetUrl.trim() || null,
         published_at: resultForm.status === 'Published' ? new Date().toISOString() : null,
       };
       const result = editingResult
@@ -752,7 +760,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
       if (result.error) throw result.error;
       showSuccess(editingResult ? "Result updated successfully!" : "New result saved successfully!");
       setEditingResult(null);
-      setResultForm({ studentId: '', examTitle: '', subject: '', obtainedMarks: 0, totalMarks: 100, grade: '', remarks: '', status: 'Draft' });
+      setResultForm({ studentId: '', examTitle: '', subject: '', obtainedMarks: 0, totalMarks: 100, grade: '', remarks: '', resultFilePath: '', resultFileType: '', googleSheetUrl: '', status: 'Draft' });
       setResultSubTab('all');
       loadAllData();
     } catch (error: any) {
@@ -765,7 +773,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
     setResultForm({
       studentId: item.studentId || '', examTitle: item.examTitle || '', subject: item.subject || '',
       obtainedMarks: Number(item.obtainedMarks || 0), totalMarks: Number(item.totalMarks || 100),
-      grade: item.grade || '', remarks: item.remarks || '', status: item.status || 'Draft',
+      grade: item.grade || '', remarks: item.remarks || '', resultFilePath: item.resultFilePath || '',
+      resultFileType: item.resultFileType || '', googleSheetUrl: item.googleSheetUrl || '', status: item.status || 'Draft',
     });
     setResultSubTab('add');
   };
@@ -1644,7 +1653,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
               </div>
               <div className="flex gap-2">
                 <button onClick={handleImportSheetResults} className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-sm"><RefreshCw className="w-4 h-4" /> Quick Import Sheets</button>
-                <button onClick={() => { setEditingResult(null); setResultForm({ studentId: '', examTitle: '', subject: '', obtainedMarks: 0, totalMarks: 100, grade: '', remarks: '', status: 'Draft' }); setResultSubTab('add'); }} className="px-4 py-2.5 bg-[#123B2A] hover:bg-emerald-900 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-sm"><Plus className="w-4 h-4" /> Add Result</button>
+                <button onClick={() => { setEditingResult(null); setResultForm({ studentId: '', examTitle: '', subject: '', obtainedMarks: 0, totalMarks: 100, grade: '', remarks: '', resultFilePath: '', resultFileType: '', googleSheetUrl: '', status: 'Draft' }); setResultSubTab('add'); }} className="px-4 py-2.5 bg-[#123B2A] hover:bg-emerald-900 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-sm"><Plus className="w-4 h-4" /> Add Result</button>
               </div>
             </div>
 
@@ -1734,6 +1743,34 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
                     <div className="sm:col-span-2">
                       <label className="block text-xs font-bold uppercase mb-1">Teacher Remarks</label>
                       <textarea rows={3} value={resultForm.remarks} onChange={e => setResultForm({...resultForm, remarks: e.target.value})} placeholder="Optional feedback for the student" className="w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-sm resize-y" />
+                    </div>
+                    <div className="sm:col-span-2 space-y-2">
+                      <label className="block text-xs font-bold uppercase mb-1">Result PDF / Image (Optional)</label>
+                      <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={async e => {
+                        const file = e.target.files?.[0]; if (!file || !supabase) return;
+                        const allowed = ['application/pdf','image/jpeg','image/png','image/webp'];
+                        if (!allowed.includes(file.type)) { showError('Please select a PDF, JPG, PNG or WEBP file.'); e.target.value=''; return; }
+                        if (file.size > 20 * 1024 * 1024) { showError('Maximum result file size is 20 MB.'); e.target.value=''; return; }
+                        setUploading(true);
+                        try {
+                          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                          const path = 'results/' + Date.now() + '-' + Math.random().toString(36).slice(2,8) + '-' + safeName;
+                          const { error } = await supabase.storage.from('result-files').upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type });
+                          if (error) throw error;
+                          setResultForm(prev => ({ ...prev, resultFilePath: path, resultFileType: file.type }));
+                          showSuccess('Result file uploaded securely.');
+                        } catch (error: any) { showError('Result file upload failed: ' + (error?.message || 'Unknown error')); }
+                        finally { setUploading(false); e.target.value=''; }
+                      }} className="w-full px-3 py-2 bg-slate-50 border rounded-xl text-sm" />
+                      {resultForm.resultFilePath && <div className="flex flex-wrap items-center gap-3 text-xs">
+                        <span className="text-emerald-700 font-semibold">Attachment uploaded ({resultForm.resultFileType === 'application/pdf' ? 'PDF' : 'Image'})</span>
+                        <button type="button" onClick={() => setResultForm(prev => ({ ...prev, resultFilePath: '', resultFileType: '' }))} className="text-rose-600 font-bold">Remove</button>
+                      </div>}
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold uppercase mb-1">Google Sheets URL (Optional)</label>
+                      <input type="url" value={resultForm.googleSheetUrl} onChange={e => setResultForm({...resultForm, googleSheetUrl: e.target.value})} placeholder="https://docs.google.com/spreadsheets/d/..." className="w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-sm" />
+                      <p className="text-[11px] text-slate-500 mt-1">Paste a view-only or published Google Sheets link. The link will appear in the student's portal.</p>
                     </div>
                   </div>
                   <p className="text-xs text-slate-500">Student name, class and group are loaded automatically from the registered Student ID.</p>

@@ -71,7 +71,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
   const [studentClassFilter, setStudentClassFilter] = useState('All');
 
   // Core Data
-  const [stats, setStats] = useState<any>({});
+
   const [teachers, setTeachers] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
   const [exams, setExams] = useState<any[]>([]);
@@ -82,7 +82,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
   const [students, setStudents] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>({});
-  const [appsScriptCode, setAppsScriptCode] = useState('');
+
 
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -221,7 +221,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
   const [settingsForm, setSettingsForm] = useState<any>({});
 
   // Google Sheets Config State
-  const [sheetUrlInput, setSheetUrlInput] = useState('https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit');
+  const [sheetUrlInput, setSheetUrlInput] = useState('');
   const [sheetTabName, setSheetTabName] = useState('Students');
   const [pinResetStudent, setPinResetStudent] = useState<any>(null);
   const [newPinInput, setNewPinInput] = useState('');
@@ -232,7 +232,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
   }, []);
 
   const loadAllData = () => {
-    fetch('/api/stats').then(res => res.json()).then(data => setStats(data)).catch(() => {});
     if (supabase) {
       Promise.all([
         supabase.from('teachers').select('*').order('sort_order', { ascending: true }),
@@ -392,12 +391,21 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
           })));
         });
     }
-    fetch('/api/verification-logs').then(res => res.json()).then(data => setLogs(data)).catch(() => {});
-    fetch('/api/settings').then(res => res.json()).then(data => {
-      setSettings(data);
-      setSettingsForm(data);
-    }).catch(() => {});
-    fetch('/api/docs/apps-script').then(res => res.json()).then(data => setAppsScriptCode(data.script || '')).catch(() => {});
+    setLogs([]);
+    if (supabase) {
+      const defaults = {
+        instituteName: 'GLEAM COACHING',
+        tagline: 'Learn Today. Lead Tomorrow.',
+        address: 'Iqbal Road, Kotwali, Chattogram, Bangladesh',
+      };
+      supabase.from('website_settings').select('value').eq('key', 'site').maybeSingle()
+        .then(({ data, error }) => {
+          if (error) return showError('Unable to load website settings: ' + error.message);
+          const value = data?.value || defaults;
+          setSettings(value);
+          setSettingsForm({ ...defaults, ...value });
+        });
+    }
   };
 
   const showSuccess = (msg: string) => {
@@ -422,41 +430,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
     return `GLM${maxNum + 1}`;
   };
 
-  // Helper for uploading files via base64 to /api/upload
   const handleFileUpload = async (file: File, callback: (attachment: { name: string; url: string; fileType: string }) => void) => {
     setUploading(true);
     setUploadProgress(20);
     try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        setUploadProgress(60);
-        const dataUrl = e.target?.result as string;
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fileName: file.name, fileType: file.type, dataUrl })
-        });
-        const data = await res.json();
-        setUploadProgress(100);
-        if (data.success) {
-          const isPdf = file.type.includes('pdf') || file.name.endsWith('.pdf');
-          callback({
-            name: file.name,
-            url: data.url,
-            fileType: isPdf ? 'pdf' : 'image'
-          });
-          showSuccess(`File "${file.name}" uploaded successfully!`);
-        } else {
-          showError(data.error || "Upload failed.");
-        }
-        setUploading(false);
-        setUploadProgress(0);
-      };
-      reader.readAsDataURL(file);
+      const url = await uploadPublicAsset(file, 'teacher-photos', 5 * 1024 * 1024, ['image/jpeg', 'image/png', 'image/webp']);
+      setUploadProgress(100);
+      callback({ name: file.name, url, fileType: 'image' });
+      showSuccess(`File "${file.name}" uploaded successfully!`);
     } catch (err: any) {
+      showError('File upload error: ' + (err?.message || 'Unknown error'));
+    } finally {
       setUploading(false);
       setUploadProgress(0);
-      showError("File upload error: " + err.message);
     }
   };
 
@@ -924,17 +910,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
   };
 
   const handleImportSheetRoutine = () => {
-    fetch('/api/routine/import-sheets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sheetUrl: sheetUrlInput })
-    })
-      .then(res => res.json())
-      .then(data => {
-        showSuccess(`Imported routine data from Google Sheets!`);
-        loadAllData();
-        setRoutineSubTab('all');
-      });
+    showError('Automatic Google Sheets import is not connected. Create the routine here and add a view-accessible sheet link as an attachment.');
   };
 
   const filteredRoutineList = routine.filter(rt => {
@@ -1298,16 +1274,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
   });
 
   // ==================== 9. WEBSITE SETTINGS & CONTENT ====================
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    fetch('/api/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settingsForm)
-    }).then(() => {
-      showSuccess("Website content & institute settings updated live!");
-      loadAllData();
+    if (!supabase) return showError('Supabase is not configured.');
+    const { error } = await supabase.from('website_settings').upsert({
+      key: 'site',
+      value: settingsForm,
+      updated_at: new Date().toISOString(),
     });
+    if (error) return showError('Unable to save website settings: ' + error.message);
+    showSuccess('Website content & institute settings saved.');
+    loadAllData();
   };
 
   return (

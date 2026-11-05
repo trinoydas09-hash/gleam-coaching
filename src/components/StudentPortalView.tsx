@@ -4,9 +4,11 @@ import { supabase } from '../lib/supabase';
 
 interface StudentPortalViewProps {
   setCurrentView: (view: string) => void;
+  quickLoginCredentials?: { studentId: string; pin: string } | null;
+  onQuickLoginConsumed?: () => void;
 }
 
-export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrentView }) => {
+export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrentView, quickLoginCredentials, onQuickLoginConsumed }) => {
   const [verifiedStudent, setVerifiedStudent] = useState<any>(null);
   const [studentId, setStudentId] = useState('');
   const [pin, setPin] = useState('');
@@ -62,6 +64,39 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrent
 
     void loadPublicAcademicInfo();
   }, []);
+
+  useEffect(() => {
+    if (!quickLoginCredentials || !supabase) return;
+    let cancelled = false;
+    const verifyQuickLogin = async () => {
+      setStudentId(quickLoginCredentials.studentId);
+      setLoading(true);
+      setError('');
+      try {
+        const { data, error: invokeError } = await supabase.functions.invoke('student-portal-login', {
+          body: quickLoginCredentials,
+        });
+        if (cancelled) return;
+        if (invokeError) throw invokeError;
+        if (data?.success && data.student) {
+          setVerifiedStudent(data.student);
+          setResults(Array.isArray(data.results) ? data.results : []);
+          setActiveTab('profile');
+        } else {
+          setError(data?.error || 'Verification failed. Check your Student ID and PIN.');
+        }
+      } catch {
+        if (!cancelled) setError('Unable to verify right now. Please try again or contact the coaching office.');
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          onQuickLoginConsumed?.();
+        }
+      }
+    };
+    void verifyQuickLogin();
+    return () => { cancelled = true; };
+  }, [quickLoginCredentials, onQuickLoginConsumed]);
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();

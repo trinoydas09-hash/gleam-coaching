@@ -2539,7 +2539,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
                     guardianMobile: '',
                     guardianRelationship: 'Father',
                     guardianAddress: '',
-                    pin: '1234',
                     status: 'Active'
                   });
                   setStudentSubTab('add');
@@ -2550,7 +2549,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
               </button>
             </div>
 
-            {/* Google Sheets Live Database Connection Card */}
+            {/* Supabase Student Database */}
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -2631,8 +2630,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
                         </div>
 
                         <div className="bg-slate-100 p-2 rounded-xl text-xs flex justify-between items-center font-mono">
-                          <span className="text-slate-500 text-[11px]">PIN: ••••</span>
-                          <button onClick={() => { setPinResetStudent(st); setNewPinInput(st.pin || '1234'); }} className="text-emerald-800 hover:underline font-bold flex items-center gap-1 text-[11px]"><Key className="w-3 h-3" /> Reset PIN</button>
+                          <span className="text-slate-500 text-[11px]">PIN: securely stored</span>
+                          <button onClick={() => { setPinResetStudent(st); setNewPinInput(''); }} className="text-emerald-800 hover:underline font-bold flex items-center gap-1 text-[11px]"><Key className="w-3 h-3" /> Reset PIN</button>
                         </div>
                       </div>
 
@@ -2890,16 +2889,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
                         />
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Verification PIN Code</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="1234"
-                          value={studentForm.pin}
-                          onChange={e => setStudentForm({...studentForm, pin: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-white border rounded-xl text-sm font-mono text-center tracking-widest font-bold"
-                        />
+                      <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-xs text-emerald-900">
+                        Student PINs are never stored or displayed in plain text. After saving this profile, use the Reset PIN action to set a secure 6-digit PIN.
                       </div>
 
                       <div>

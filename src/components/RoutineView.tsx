@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { loadRoutines } from '../lib/publicData';
 import { Calendar, Clock, User, BookOpen, Download, FileText, ExternalLink, Eye, X, Image as ImageIcon, Archive, Sparkles } from 'lucide-react';
 
 export const RoutineView: React.FC = () => {
@@ -8,10 +9,7 @@ export const RoutineView: React.FC = () => {
   const [selectedPdfModal, setSelectedPdfModal] = useState<any>(null);
 
   useEffect(() => {
-    fetch('/api/routine?status=Published')
-      .then(res => res.json())
-      .then(data => setRoutines(data))
-      .catch(() => {});
+    loadRoutines().then(setRoutines).catch(() => setRoutines([]));
   }, []);
 
   const classFilters = ['Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];

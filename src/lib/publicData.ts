@@ -10,8 +10,8 @@ export async function loadTeachers() {
   if (error) throw error;
   return (data || []).map((row: any) => ({
     id: row.id, name: row.name, designation: row.designation, subject: row.subject,
-    bio: row.bio, experience: row.experience, image: row.image_path, email: row.email,
-    phone: row.phone, displayOrder: row.sort_order, isActive: row.is_published,
+    bio: row.bio, experience: row.qualification || '', image: row.photo_path, email: row.email,
+    phone: row.phone, subject: (row.subjects || []).join(', '), displayOrder: row.sort_order, isActive: row.is_published,
   }));
 }
 

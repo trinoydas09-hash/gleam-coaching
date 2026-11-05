@@ -141,19 +141,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
   // --- RESULT FORM STATE ---
   const [editingResult, setEditingResult] = useState<any>(null);
   const [resultForm, setResultForm] = useState({
-    studentId: 'GLM1001',
-    studentName: 'Tanvir Ahmed',
-    classLevel: 'Class 10',
-    group: 'Science',
-    examTitle: 'Weekly Assessment',
-    subject: 'Physics',
-    obtainedMarks: 45,
-    totalMarks: 50,
-    gpa: '5.00',
-    position: '1st',
-    remarks: 'Excellent performance and high analytical accuracy.',
-    documentUrl: '',
-    status: 'Published'
+    studentId: '',
+    examTitle: '',
+    subject: '',
+    obtainedMarks: 0,
+    totalMarks: 100,
+    grade: '',
+    remarks: '',
+    status: 'Draft'
   });
 
   // --- CLASS ROUTINE FORM STATE ---
@@ -284,7 +279,24 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
           }));
         });
     }
-    fetch('/api/results').then(res => res.json()).then(data => setResults(data)).catch(() => {});
+    if (supabase) {
+      supabase.from('results')
+        .select('*, students!results_student_id_fkey(student_id,full_name,class_level,group_name)')
+        .order('created_at', { ascending: false })
+        .then(({ data, error }) => {
+          if (error) return showError('Unable to load results: ' + error.message);
+          setResults((data || []).map((row: any) => ({
+            id: row.id, studentId: row.students?.student_id || '',
+            studentName: row.students?.full_name || 'Student',
+            classLevel: row.students?.class_level ? 'Class ' + row.students.class_level : '—',
+            group: row.students?.group_name || '',
+            examTitle: row.exam_title || '', subject: row.subject || '',
+            obtainedMarks: Number(row.marks_obtained || 0), totalMarks: Number(row.total_marks || 0),
+            grade: row.grade || '', remarks: row.remarks || '',
+            status: row.published_at ? 'Published' : 'Draft', publishedAt: row.published_at,
+          })));
+        });
+    }
     if (supabase) {
       supabase.from('routines')
         .select('*, routine_attachments(id,file_path,file_name,content_type,sort_order)')
@@ -710,70 +722,74 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
   });
 
   // ==================== 4. RESULT MANAGEMENT ====================
-  const handleSaveResult = (e: React.FormEvent) => {
+  const handleSaveResult = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!resultForm.studentId.trim() || !resultForm.subject.trim()) return showError("Student ID and Subject are required.");
-    const url = editingResult ? `/api/results/${editingResult.id}` : '/api/results';
-    const method = editingResult ? 'PUT' : 'POST';
-
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(resultForm)
-    }).then(() => {
-      showSuccess(editingResult ? "Result updated successfully!" : "New Result added!");
+    if (!supabase) return showError("Supabase is not configured.");
+    if (!resultForm.studentId.trim() || !resultForm.examTitle.trim() || !resultForm.subject.trim()) {
+      return showError("Student ID, exam title and subject are required.");
+    }
+    if (Number(resultForm.totalMarks) <= 0 || Number(resultForm.obtainedMarks) < 0 || Number(resultForm.obtainedMarks) > Number(resultForm.totalMarks)) {
+      return showError("Please enter valid marks. Obtained marks cannot exceed total marks.");
+    }
+    try {
+      const { data: student, error: studentError } = await supabase.from('students')
+        .select('id,student_id').ilike('student_id', resultForm.studentId.trim()).maybeSingle();
+      if (studentError) throw studentError;
+      if (!student) return showError("Student ID not found. Add the student in Student Management first.");
+      const payload = {
+        student_id: student.id,
+        exam_title: resultForm.examTitle.trim(),
+        subject: resultForm.subject.trim(),
+        marks_obtained: Number(resultForm.obtainedMarks),
+        total_marks: Number(resultForm.totalMarks),
+        grade: resultForm.grade.trim() || null,
+        remarks: resultForm.remarks.trim() || null,
+        published_at: resultForm.status === 'Published' ? new Date().toISOString() : null,
+      };
+      const result = editingResult
+        ? await supabase.from('results').update(payload).eq('id', editingResult.id).select('id').single()
+        : await supabase.from('results').insert(payload).select('id').single();
+      if (result.error) throw result.error;
+      showSuccess(editingResult ? "Result updated successfully!" : "New result saved successfully!");
       setEditingResult(null);
+      setResultForm({ studentId: '', examTitle: '', subject: '', obtainedMarks: 0, totalMarks: 100, grade: '', remarks: '', status: 'Draft' });
       setResultSubTab('all');
       loadAllData();
-    });
+    } catch (error: any) {
+      showError("Unable to save result: " + (error?.message || 'Unknown error'));
+    }
   };
 
-  const handleEditResultClick = (resItem: any) => {
-    setEditingResult(resItem);
+  const handleEditResultClick = (item: any) => {
+    setEditingResult(item);
     setResultForm({
-      studentId: resItem.studentId || '',
-      studentName: resItem.studentName || '',
-      classLevel: resItem.classLevel || 'Class 10',
-      group: resItem.group || 'Science',
-      examTitle: resItem.examTitle || '',
-      subject: resItem.subject || '',
-      obtainedMarks: resItem.obtainedMarks || 0,
-      totalMarks: resItem.totalMarks || 50,
-      gpa: resItem.gpa || '5.00',
-      position: resItem.position || '1st',
-      remarks: resItem.remarks || '',
-      documentUrl: resItem.documentUrl || '',
-      status: resItem.status || 'Published'
+      studentId: item.studentId || '', examTitle: item.examTitle || '', subject: item.subject || '',
+      obtainedMarks: Number(item.obtainedMarks || 0), totalMarks: Number(item.totalMarks || 100),
+      grade: item.grade || '', remarks: item.remarks || '', status: item.status || 'Draft',
     });
     setResultSubTab('add');
   };
 
-  const handleDeleteResultClick = (id: string, name: string) => {
-    if (confirm(`Are you sure you want to delete result entry for "${name}"?`)) {
-      fetch(`/api/results/${id}`, { method: 'DELETE' }).then(() => {
-        showSuccess("Result entry deleted.");
-        loadAllData();
-      });
-    }
+  const handleDeleteResultClick = async (id: string, name: string) => {
+    if (!supabase || !confirm(`Are you sure you want to delete result entry for "${name}"?`)) return;
+    const { error } = await supabase.from('results').delete().eq('id', id);
+    if (error) return showError("Unable to delete result: " + error.message);
+    showSuccess("Result entry deleted.");
+    loadAllData();
   };
 
   const handleImportSheetResults = () => {
-    fetch('/api/results/import-sheets', { method: 'POST' })
-      .then(res => res.json())
-      .then(data => {
-        showSuccess(`Successfully imported ${data.count || 2} student results from Google Sheets!`);
-        loadAllData();
-        setResultSubTab('all');
-      });
+    showError("Google Sheets auto-import is not connected yet. Please add results manually for now.");
   };
 
   const filteredResultsList = results.filter(r => {
-    const matchesSearch = r.studentId.toLowerCase().includes(resultSearch.toLowerCase()) ||
-                          (r.studentName && r.studentName.toLowerCase().includes(resultSearch.toLowerCase())) ||
-                          (r.subject && r.subject.toLowerCase().includes(resultSearch.toLowerCase()));
+    const matchesSearch = (r.studentId || '').toLowerCase().includes(resultSearch.toLowerCase()) ||
+      (r.studentName || '').toLowerCase().includes(resultSearch.toLowerCase()) ||
+      (r.subject || '').toLowerCase().includes(resultSearch.toLowerCase()) ||
+      (r.examTitle || '').toLowerCase().includes(resultSearch.toLowerCase());
     const matchesClass = resultClassFilter === 'All' || r.classLevel === resultClassFilter;
     const matchesTab = resultSubTab === 'published' ? r.status === 'Published' :
-                       resultSubTab === 'drafts' ? r.status === 'Draft' : true;
+      resultSubTab === 'drafts' ? r.status === 'Draft' : true;
     return matchesSearch && matchesClass && matchesTab;
   });
 
@@ -1628,7 +1644,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
               </div>
               <div className="flex gap-2">
                 <button onClick={handleImportSheetResults} className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-sm"><RefreshCw className="w-4 h-4" /> Quick Import Sheets</button>
-                <button onClick={() => { setEditingResult(null); setResultForm({ studentId: 'GLM1001', studentName: 'Tanvir Ahmed', classLevel: 'Class 10', group: 'Science', examTitle: 'Weekly Assessment', subject: 'Physics', obtainedMarks: 45, totalMarks: 50, gpa: '5.00', position: '1st', remarks: 'Excellent performance', documentUrl: '', status: 'Published' }); setResultSubTab('add'); }} className="px-4 py-2.5 bg-[#123B2A] hover:bg-emerald-900 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-sm"><Plus className="w-4 h-4" /> Add Result</button>
+                <button onClick={() => { setEditingResult(null); setResultForm({ studentId: '', examTitle: '', subject: '', obtainedMarks: 0, totalMarks: 100, grade: '', remarks: '', status: 'Draft' }); setResultSubTab('add'); }} className="px-4 py-2.5 bg-[#123B2A] hover:bg-emerald-900 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-sm"><Plus className="w-4 h-4" /> Add Result</button>
               </div>
             </div>
 
@@ -1670,7 +1686,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
                     <span className="px-3 py-1 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-lg font-mono">ID: {resItem.studentId}</span>
                     <h3 className="text-lg font-bold text-slate-900">{resItem.studentName || 'Student'}</h3>
                     <p className="text-xs text-slate-600 font-semibold">{resItem.classLevel} · {resItem.subject}</p>
-                    <p className="text-xs text-slate-500">Marks: {resItem.obtainedMarks}/{resItem.totalMarks} | GPA: {resItem.gpa}</p>
+                    <p className="text-xs text-slate-500">Marks: {resItem.obtainedMarks}/{resItem.totalMarks} | Grade: {resItem.grade || '—'}</p>
                     <div className="pt-4 border-t flex justify-end gap-2">
                       <button onClick={() => handleEditResultClick(resItem)} className="px-3 py-1.5 bg-slate-100 text-xs font-bold rounded-lg flex items-center gap-1"><Edit className="w-3.5 h-3.5" /> Edit</button>
                       <button onClick={() => handleDeleteResultClick(resItem.id, resItem.studentId)} className="px-3 py-1.5 bg-rose-50 text-rose-700 text-xs font-bold rounded-lg flex items-center gap-1"><Trash2 className="w-3.5 h-3.5" /> Delete</button>
@@ -1684,19 +1700,46 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
               <div className="bg-white rounded-3xl p-8 border max-w-2xl space-y-6">
                 <h3 className="text-xl font-bold font-['Bricolage_Grotesque']">{editingResult ? 'Edit Result' : 'Add Result Entry'}</h3>
                 <form onSubmit={handleSaveResult} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold uppercase mb-1">Student ID</label>
-                      <input type="text" required value={resultForm.studentId} onChange={e => setResultForm({...resultForm, studentId: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-sm" />
+                      <label className="block text-xs font-bold uppercase mb-1">Registered Student ID *</label>
+                      <input required value={resultForm.studentId} onChange={e => setResultForm({...resultForm, studentId: e.target.value})} placeholder="e.g. GLM1001" className="w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-sm" />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold uppercase mb-1">Student Name</label>
-                      <input type="text" required value={resultForm.studentName} onChange={e => setResultForm({...resultForm, studentName: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-sm" />
+                      <label className="block text-xs font-bold uppercase mb-1">Exam / Assessment Title *</label>
+                      <input required value={resultForm.examTitle} onChange={e => setResultForm({...resultForm, examTitle: e.target.value})} placeholder="Weekly Assessment" className="w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase mb-1">Subject *</label>
+                      <input required value={resultForm.subject} onChange={e => setResultForm({...resultForm, subject: e.target.value})} placeholder="Mathematics" className="w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase mb-1">Obtained Marks *</label>
+                      <input type="number" required min="0" step="0.01" value={resultForm.obtainedMarks} onChange={e => setResultForm({...resultForm, obtainedMarks: Number(e.target.value)})} className="w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase mb-1">Total Marks *</label>
+                      <input type="number" required min="1" step="0.01" value={resultForm.totalMarks} onChange={e => setResultForm({...resultForm, totalMarks: Number(e.target.value)})} className="w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase mb-1">Grade</label>
+                      <input value={resultForm.grade} onChange={e => setResultForm({...resultForm, grade: e.target.value})} placeholder="A+ / A / B" className="w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase mb-1">Publication Status</label>
+                      <select value={resultForm.status} onChange={e => setResultForm({...resultForm, status: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-sm">
+                        <option value="Draft">Save as Draft</option><option value="Published">Publish Result</option>
+                      </select>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold uppercase mb-1">Teacher Remarks</label>
+                      <textarea rows={3} value={resultForm.remarks} onChange={e => setResultForm({...resultForm, remarks: e.target.value})} placeholder="Optional feedback for the student" className="w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-sm resize-y" />
                     </div>
                   </div>
+                  <p className="text-xs text-slate-500">Student name, class and group are loaded automatically from the registered Student ID.</p>
                   <div className="flex justify-end gap-3 pt-4">
-                    <button type="button" onClick={() => setResultSubTab('all')} className="px-5 py-2.5 bg-slate-100 font-bold rounded-xl text-xs">Cancel</button>
-                    <button type="submit" className="px-6 py-2.5 bg-[#123B2A] text-white font-bold rounded-xl text-xs">Save Result</button>
+                    <button type="button" onClick={() => { setEditingResult(null); setResultSubTab('all'); }} className="px-5 py-2.5 bg-slate-100 font-bold rounded-xl text-xs">Cancel</button>
+                    <button type="submit" className="px-6 py-2.5 bg-[#123B2A] text-white font-bold rounded-xl text-xs">{editingResult ? 'Update Result' : 'Save Result'}</button>
                   </div>
                 </form>
               </div>

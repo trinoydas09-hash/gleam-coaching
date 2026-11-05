@@ -282,6 +282,12 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrent
                       <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">{res.examTitle}</span>
                       <h3 className="text-lg font-bold text-slate-900">{res.subject}</h3>
                       <p className="text-xs text-slate-600 italic">"{res.remarks}"</p>
+                      {(res.resultFileUrl || res.googleSheetUrl) && <div className="flex flex-wrap items-center gap-3 pt-3">
+                        {res.resultFileUrl && (res.resultFileType === 'application/pdf'
+                          ? <a href={res.resultFileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold border border-rose-100">View / Download Result PDF</a>
+                          : <a href={res.resultFileUrl} target="_blank" rel="noopener noreferrer" className="block"><img src={res.resultFileUrl} alt="Result attachment" className="max-h-48 max-w-full rounded-xl border object-contain" /></a>)}
+                        {res.googleSheetUrl && <a href={res.googleSheetUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-100">Open Google Sheets Result</a>}
+                      </div>
                     </div>
                     <div className="flex items-center gap-6 bg-slate-50 px-6 py-4 rounded-2xl border border-slate-100 w-full md:w-auto justify-between md:justify-end">
                       <div className="text-center">

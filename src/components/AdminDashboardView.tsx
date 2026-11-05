@@ -245,7 +245,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
     fetch('/api/farewell/albums').then(res => res.json()).then(data => setFarewellAlbums(data || [])).catch(() => {});
     if (supabase) {
       supabase.from('students')
-        .select('id,student_id,full_name,date_of_birth,gender,student_phone,email,address,class_level,group_name,session,admission_date,guardian_name,guardian_phone,relationship,status,created_at')
+        .select('id,student_id,full_name,date_of_birth,gender,student_phone,email,address,class_level,group_name,session,admission_date,guardian_name,guardian_phone,relationship,guardian_address,status,created_at')
         .order('created_at', { ascending: false })
         .then(({ data, error }) => {
           if (error) return showError('Unable to load student records: ' + error.message);
@@ -265,7 +265,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
             guardianName: row.guardian_name || '',
             guardianMobile: row.guardian_phone || '',
             guardianRelationship: row.relationship || '',
-            guardianAddress: '',
+            guardianAddress: row.guardian_address || '',
             status: (row.status || 'active').toLowerCase() === 'active' ? 'Active' : 'Inactive',
           })));
         });
@@ -927,6 +927,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
       guardian_name: studentForm.guardianName || null,
       guardian_phone: studentForm.guardianMobile || null,
       relationship: studentForm.guardianRelationship || null,
+      guardian_address: studentForm.guardianAddress || null,
       status: studentForm.status.toLowerCase(),
     };
 

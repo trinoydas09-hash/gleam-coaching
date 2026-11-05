@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { HomeView } from './components/HomeView';
@@ -18,6 +18,13 @@ import { supabase } from './lib/supabase';
 export default function App() {
   const [currentView, setCurrentView] = useState('home');
   const [quickLoginCredentials, setQuickLoginCredentials] = useState<{ studentId: string; pin: string } | null>(null);
+  const handleQuickStudentLogin = useCallback((studentId: string, pin: string) => {
+    setQuickLoginCredentials({ studentId, pin });
+    setCurrentView('student-portal');
+  }, []);
+  const consumeQuickStudentLogin = useCallback(() => {
+    setQuickLoginCredentials(null);
+  }, []);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [adminUser, setAdminUser] = useState<any>(null);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(
@@ -104,7 +111,7 @@ export default function App() {
       />
 
       <main className="flex-1">
-        {currentView === 'home' && <HomeView setCurrentView={setCurrentView} onVerifyStudentQuick={(studentId, pin) => { setQuickLoginCredentials({ studentId, pin }); setCurrentView('student-portal'); }} />}
+        {currentView === 'home' && <HomeView setCurrentView={setCurrentView} onVerifyStudentQuick={handleQuickStudentLogin} />}
         {currentView === 'about' && <AboutView />}
         {currentView === 'courses' && <CoursesView setCurrentView={setCurrentView} />}
         {currentView === 'teachers' && <TeachersView />}
@@ -112,7 +119,7 @@ export default function App() {
         {currentView === 'results' && <ResultsView setCurrentView={setCurrentView} />}
         {currentView === 'routine' && <RoutineView />}
         {currentView === 'notices' && <NoticesView />}
-        {currentView === 'student-portal' && <StudentPortalView setCurrentView={setCurrentView} quickLoginCredentials={quickLoginCredentials} onQuickLoginConsumed={() => setQuickLoginCredentials(null)} />}
+        {currentView === 'student-portal' && <StudentPortalView setCurrentView={setCurrentView} quickLoginCredentials={quickLoginCredentials} onQuickLoginConsumed={consumeQuickStudentLogin} />}
         {currentView === 'contact' && <ContactView />}
         {currentView === 'admin-login' && (
           <AdminLoginView

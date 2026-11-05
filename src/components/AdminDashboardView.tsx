@@ -2913,7 +2913,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
                     {editingStudent && (
                       <button
                         type="button"
-                        onClick={() => { setPinResetStudent(editingStudent); setNewPinInput(editingStudent.pin || '1234'); }}
+                        onClick={() => { setPinResetStudent(editingStudent); setNewPinInput(''); }}
                         className="px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold rounded-xl flex items-center gap-1.5"
                       >
                         <Key className="w-4 h-4" /> Reset PIN Code

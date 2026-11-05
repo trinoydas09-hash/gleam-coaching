@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Search, Award, CheckCircle2, AlertCircle, FileText, ArrowRight } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 interface ResultsViewProps {
   setCurrentView: (view: string) => void;
@@ -13,30 +14,35 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ setCurrentView }) => {
   const [studentData, setStudentData] = useState<any>(null);
   const [results, setResults] = useState<any[]>([]);
 
-  const handleVerify = (e: React.FormEvent) => {
+  const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!studentId || !pin) {
-      setError("Please enter both Student ID and Verification PIN.");
+    if (!studentId.trim() || !/^\\d{6}$/.test(pin)) {
+      setError("Please enter your Student ID and 6-digit Verification PIN.");
+      return;
+    }
+    if (!supabase) {
+      setError("Student Portal is not configured. Please contact the coaching office.");
       return;
     }
     setLoading(true);
     setError('');
-    fetch('/api/students/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studentId, pin })
-    })
-      .then(async res => {
-        const data = await res.json();
-        if (res.ok && data.success) {
-          setStudentData(data.student);
-          setResults(data.results);
-        } else {
-          setError(data.error || "Verification failed. Please check your Student ID and PIN.");
-        }
-      })
-      .catch(() => setError("Network error during verification."))
-      .finally(() => setLoading(false));
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('student-portal-login', {
+        body: { studentId: studentId.trim(), pin },
+      });
+      if (invokeError) throw invokeError;
+      if (data?.success && data.student) {
+        setStudentData(data.student);
+        setResults(Array.isArray(data.results) ? data.results : []);
+        setPin('');
+      } else {
+        setError(data?.error || "Verification failed. Please check your Student ID and PIN.");
+      }
+    } catch {
+      setError("Unable to verify right now. Please try again or contact the coaching office.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -75,7 +81,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ setCurrentView }) => {
               </label>
               <input
                 type="password"
-                placeholder="4-digit PIN"
+                placeholder="6-digit PIN"
                 value={pin}
                 onChange={e => setPin(e.target.value)}
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
@@ -99,8 +105,8 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ setCurrentView }) => {
           </form>
 
           <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100 text-xs text-slate-600 space-y-1">
-            <p className="font-bold text-emerald-900">Demo Test Credentials:</p>
-            <p>Student ID: <strong className="text-slate-900">GLM1001</strong> | PIN: <strong className="text-slate-900">1234</strong> (Tanvir Ahmed, Class 10)</p>
+            <p className="font-bold text-emerald-900">Need access?</p>
+            <p>Contact the coaching office to receive your registered Student ID and 6-digit PIN. Demo credentials are not available.</p>
           </div>
         </div>
       ) : (

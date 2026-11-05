@@ -31,28 +31,14 @@ export const HomeView: React.FC<HomeViewProps> = ({ setCurrentView, onVerifyStud
 
   const handleQuickVerify = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!quickId || !quickPin) {
-      setQuickError("Please enter both Student ID and PIN.");
+    if (!quickId.trim() || !/^\d{6}$/.test(quickPin)) {
+      setQuickError("Enter your Student ID and 6-digit Verification PIN.");
       return;
     }
-    setQuickLoading(true);
     setQuickError('');
-    fetch('/api/students/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studentId: quickId, pin: quickPin })
-    })
-      .then(async res => {
-        const data = await res.json();
-        if (res.ok && data.success) {
-          localStorage.setItem('gleam_verified_student', JSON.stringify(data.student));
-          setCurrentView('student-portal');
-        } else {
-          setQuickError(data.error || "Verification failed. Check ID and PIN.");
-        }
-      })
-      .catch(() => setQuickError("Network error during verification."))
-      .finally(() => setQuickLoading(false));
+    setQuickLoading(true);
+    onVerifyStudentQuick(quickId.trim(), quickPin);
+    setQuickLoading(false);
   };
 
   return (
@@ -122,9 +108,12 @@ export const HomeView: React.FC<HomeViewProps> = ({ setCurrentView, onVerifyStud
                 </label>
                 <input
                   type="password"
-                  placeholder="Enter 4-digit PIN"
+                  placeholder="Enter 6-digit PIN"
                   value={quickPin}
-                  onChange={(e) => setQuickPin(e.target.value)}
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoComplete="off"
+                  onChange={(e) => setQuickPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
                 />
               </div>
@@ -143,9 +132,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ setCurrentView, onVerifyStud
                 {quickLoading ? "Verifying..." : "Verify & View Results"}
               </button>
             </form>
-            <div className="mt-4 pt-4 border-t border-slate-100 text-center text-xs text-slate-500">
-              Demo Test ID: <strong className="text-slate-700">GLM1001</strong> | PIN: <strong className="text-slate-700">1234</strong>
-            </div>
+            <p className="mt-4 pt-4 border-t border-slate-100 text-center text-xs text-slate-500">Use the Student ID and 6-digit PIN provided by the coaching office.</p>
           </div>
         </div>
       </section>

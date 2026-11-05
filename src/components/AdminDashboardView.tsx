@@ -727,6 +727,30 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
   });
 
   // ==================== 5. CLASS ROUTINE MANAGEMENT ====================
+  const handleRoutineFileUpload = async (file: File, fileType: 'image' | 'pdf') => {
+    if (!supabase) return showError("Supabase is not configured. Please sign in again.");
+    const validImage = fileType === 'image' && ['image/jpeg', 'image/png', 'image/webp'].includes(file.type);
+    const validPdf = fileType === 'pdf' && (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
+    if (!validImage && !validPdf) return showError(fileType === 'pdf' ? 'Please choose a PDF file.' : 'Please choose a JPG, PNG, or WEBP image.');
+    if (file.size > 20 * 1024 * 1024) return showError('File size must be 20 MB or less.');
+    setUploading(true);
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+      const filePath = `routines/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
+      const { error } = await supabase.storage.from('routine-files').upload(filePath, file, { contentType: file.type, upsert: false });
+      if (error) throw error;
+      const { data } = supabase.storage.from('routine-files').getPublicUrl(filePath);
+      const attachment = { name: file.name, url: data.publicUrl, fileType };
+      if (fileType === 'pdf') setRoutineForm(prev => ({ ...prev, pdfAttachments: [...prev.pdfAttachments, attachment] }));
+      else setRoutineForm(prev => ({ ...prev, imageAttachments: [...prev.imageAttachments, attachment] }));
+      showSuccess(`File "${file.name}" uploaded successfully.`);
+    } catch (error: any) {
+      showError('Routine file upload failed: ' + (error?.message || 'Unknown error'));
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleSaveRoutine = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!routineForm.title.trim()) return showError("Routine Title is required.");
@@ -1740,12 +1764,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
                   </div>
                   <div>
                     <label className="block text-xs font-bold uppercase text-slate-600 mb-2">Upload Routine Images</label>
-                    <input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={e => Array.from(e.target.files || []).forEach(file => handleFileUpload(file, attachment => setRoutineForm(prev => ({ ...prev, imageAttachments: [...prev.imageAttachments, attachment] }))))} className="w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:font-bold file:text-emerald-800" />
+                    <input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={e => { Array.from(e.target.files || []).forEach(file => handleRoutineFileUpload(file, 'image')); e.currentTarget.value = ''; }} className="w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:font-bold file:text-emerald-800" />
                     <div className="mt-2 space-y-1">{routineForm.imageAttachments.map((file: any, index: number) => <div key={index} className="flex items-center justify-between text-xs bg-slate-50 p-2 rounded-lg"><span className="truncate">{file.name}</span><button type="button" onClick={() => setRoutineForm(prev => ({ ...prev, imageAttachments: prev.imageAttachments.filter((_: any, i: number) => i !== index) }))} className="text-rose-600 font-bold ml-2">Remove</button></div>)}</div>
                   </div>
                   <div>
                     <label className="block text-xs font-bold uppercase text-slate-600 mb-2">Upload Routine PDF</label>
-                    <input type="file" accept="application/pdf,.pdf" multiple onChange={e => Array.from(e.target.files || []).forEach(file => handleFileUpload(file, attachment => setRoutineForm(prev => ({ ...prev, pdfAttachments: [...prev.pdfAttachments, { ...attachment, fileType: 'pdf' }] }))))} className="w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:font-bold file:text-emerald-800" />
+                    <input type="file" accept="application/pdf,.pdf" multiple onChange={e => { Array.from(e.target.files || []).forEach(file => handleRoutineFileUpload(file, 'pdf')); e.currentTarget.value = ''; }} className="w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:font-bold file:text-emerald-800" />
                     <div className="mt-2 space-y-1">{routineForm.pdfAttachments.map((file: any, index: number) => <div key={index} className="flex items-center justify-between text-xs bg-slate-50 p-2 rounded-lg"><span className="truncate">{file.name}</span><button type="button" onClick={() => setRoutineForm(prev => ({ ...prev, pdfAttachments: prev.pdfAttachments.filter((_: any, i: number) => i !== index) }))} className="text-rose-600 font-bold ml-2">Remove</button></div>)}</div>
                   </div>
                   <div className="md:col-span-2">

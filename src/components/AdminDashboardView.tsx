@@ -235,8 +235,29 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
 
   const loadAllData = () => {
     fetch('/api/stats').then(res => res.json()).then(data => setStats(data)).catch(() => {});
-    fetch('/api/teachers').then(res => res.json()).then(data => setTeachers(data)).catch(() => {});
-    fetch('/api/courses').then(res => res.json()).then(data => setCourses(data)).catch(() => {});
+    if (supabase) {
+      Promise.all([
+        supabase.from('teachers').select('*').order('sort_order', { ascending: true }),
+        supabase.from('courses').select('*').order('sort_order', { ascending: true }),
+      ]).then(([teacherResult, courseResult]) => {
+        if (teacherResult.error) showError('Unable to load teachers: ' + teacherResult.error.message);
+        else setTeachers((teacherResult.data || []).map((row: any) => ({
+          id: row.id, name: row.name, designation: row.designation || '',
+          subject: (row.subjects || []).join(', '), bio: row.bio || '',
+          experience: row.qualification || '', image: row.photo_path || '',
+          email: row.email || '', phone: row.phone || '',
+          displayOrder: row.sort_order, isActive: row.is_published,
+        })));
+        if (courseResult.error) showError('Unable to load courses: ' + courseResult.error.message);
+        else setCourses((courseResult.data || []).map((row: any) => ({
+          id: row.id, title: row.title, className: 'Class ' + row.class_level,
+          description: row.description || '', subjects: row.subjects || [],
+          duration: row.duration || '', schedule: row.schedule || '',
+          image: row.image_path || '', status: row.status || 'active',
+          displayOrder: row.sort_order,
+        })));
+      });
+    }
     fetch('/api/exams').then(res => res.json()).then(data => setExams(data)).catch(() => {});
     fetch('/api/results').then(res => res.json()).then(data => setResults(data)).catch(() => {});
     fetch('/api/routine').then(res => res.json()).then(data => setRoutine(data)).catch(() => {});
@@ -339,22 +360,36 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
   };
 
   // ==================== 1. TEACHERS MANAGEMENT ====================
-  const handleSaveTeacher = (e: React.FormEvent) => {
+  const handleSaveTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!teacherForm.name.trim()) return showError("Teacher name is required.");
-    const url = editingTeacher ? `/api/teachers/${editingTeacher.id}` : '/api/teachers';
-    const method = editingTeacher ? 'PUT' : 'POST';
-
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(teacherForm)
-    }).then(() => {
+    if (!supabase) return showError("Supabase is not configured. Please refresh and sign in again.");
+    const payload = {
+      name: teacherForm.name.trim(),
+      designation: teacherForm.designation.trim() || null,
+      subjects: teacherForm.subject.split(',').map((value: string) => value.trim()).filter(Boolean),
+      bio: teacherForm.bio.trim() || null,
+      qualification: teacherForm.experience.trim() || null,
+      photo_path: teacherForm.image || null,
+      email: teacherForm.email.trim() || null,
+      phone: teacherForm.phone.trim() || null,
+      sort_order: Number(teacherForm.displayOrder) || 1,
+      is_published: Boolean(teacherForm.isActive),
+      updated_at: new Date().toISOString(),
+    };
+    try {
+      const result = editingTeacher
+        ? await supabase.from('teachers').update(payload).eq('id', editingTeacher.id).select('id').single()
+        : await supabase.from('teachers').insert(payload).select('id').single();
+      if (result.error) throw result.error;
       showSuccess(editingTeacher ? "Teacher profile updated!" : "New teacher added!");
       setEditingTeacher(null);
+      setTeacherForm({ name: '', designation: 'Instructor', subject: '', bio: '', experience: '5+ Years', image: '/assets/aistudio/image_4f62b769.png', email: '', phone: '', displayOrder: 1, isActive: true });
       setTeacherSubTab('all');
       loadAllData();
-    });
+    } catch (error: any) {
+      showError("Unable to save teacher: " + (error?.message || "Unknown error"));
+    }
   };
 
   const handleEditTeacherClick = (t: any) => {
@@ -374,12 +409,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
     setTeacherSubTab('add');
   };
 
-  const handleDeleteTeacherClick = (id: string, name: string) => {
-    if (confirm(`Are you sure you want to delete teacher "${name}"?`)) {
-      fetch(`/api/teachers/${id}`, { method: 'DELETE' }).then(() => {
-        showSuccess(`Teacher "${name}" deleted.`);
-        loadAllData();
-      });
+  const handleDeleteTeacherClick = async (id: string, name: string) => {
+    if (!supabase || !confirm(`Are you sure you want to delete teacher "${name}"?`)) return;
+    try {
+      const { error } = await supabase.from('teachers').delete().eq('id', id);
+      if (error) throw error;
+      showSuccess(`Teacher "${name}" deleted.`);
+      loadAllData();
+    } catch (error: any) {
+      showError("Unable to delete teacher: " + (error?.message || "Unknown error"));
     }
   };
 
@@ -393,22 +431,38 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
   });
 
   // ==================== 2. COURSES MANAGEMENT ====================
-  const handleSaveCourse = (e: React.FormEvent) => {
+  const handleSaveCourse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!courseForm.title.trim()) return showError("Course title is required.");
-    const url = editingCourse ? `/api/courses/${editingCourse.id}` : '/api/courses';
-    const method = editingCourse ? 'PUT' : 'POST';
-
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(courseForm)
-    }).then(() => {
+    if (!supabase) return showError("Supabase is not configured. Please refresh and sign in again.");
+    const classLevel = Number(String(courseForm.className).replace(/[^0-9]/g, ''));
+    if (!Number.isInteger(classLevel) || classLevel < 6 || classLevel > 12) return showError("Please select a valid class level.");
+    const payload = {
+      title: courseForm.title.trim(),
+      class_level: classLevel,
+      description: courseForm.description.trim() || null,
+      subjects: courseForm.subjects.split(',').map((value: string) => value.trim()).filter(Boolean),
+      duration: courseForm.duration.trim() || null,
+      schedule: courseForm.schedule.trim() || null,
+      image_path: courseForm.image || null,
+      status: String(courseForm.status || 'Active').toLowerCase(),
+      sort_order: Number(courseForm.displayOrder) || 1,
+      is_published: String(courseForm.status || 'Active').toLowerCase() === 'active',
+      updated_at: new Date().toISOString(),
+    };
+    try {
+      const result = editingCourse
+        ? await supabase.from('courses').update(payload).eq('id', editingCourse.id).select('id').single()
+        : await supabase.from('courses').insert(payload).select('id').single();
+      if (result.error) throw result.error;
       showSuccess(editingCourse ? "Course updated!" : "New course created!");
       setEditingCourse(null);
+      setCourseForm({ className: 'Class 10', title: '', description: '', subjects: '', assignedTeachers: [], duration: '1 Year', schedule: 'Sun, Tue, Thu (4:00 PM - 6:00 PM)', image: '/assets/aistudio/image_4f62b769.png', status: 'Active', displayOrder: 1 });
       setCourseSubTab('all');
       loadAllData();
-    });
+    } catch (error: any) {
+      showError("Unable to save course: " + (error?.message || "Unknown error"));
+    }
   };
 
   const handleEditCourseClick = (c: any) => {
@@ -428,12 +482,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
     setCourseSubTab('add');
   };
 
-  const handleDeleteCourseClick = (id: string, title: string) => {
-    if (confirm(`Are you sure you want to delete course "${title}"?`)) {
-      fetch(`/api/courses/${id}`, { method: 'DELETE' }).then(() => {
-        showSuccess(`Course "${title}" deleted.`);
-        loadAllData();
-      });
+  const handleDeleteCourseClick = async (id: string, title: string) => {
+    if (!supabase || !confirm(`Are you sure you want to delete course "${title}"?`)) return;
+    try {
+      const { error } = await supabase.from('courses').delete().eq('id', id);
+      if (error) throw error;
+      showSuccess(`Course "${title}" deleted.`);
+      loadAllData();
+    } catch (error: any) {
+      showError("Unable to delete course: " + (error?.message || "Unknown error"));
     }
   };
 

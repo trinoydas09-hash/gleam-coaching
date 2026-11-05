@@ -62,9 +62,10 @@ export async function loadNotices() {
   if (error) throw error;
   return (data || []).map((row: any) => ({
     id: row.id, title: row.title, content: row.body || '', category: row.category || 'General Notice',
-    date: row.published_at, status: 'Published', targetClass: 'All Students', isPinned: false,
+    date: row.published_at, status: 'Published', targetClass: row.target_class || 'All Students',
+    priority: row.priority || 'Normal', isPinned: Boolean(row.is_pinned), googleSheetUrl: row.google_sheet_url || '',
     attachmentUrl: row.notice_attachments?.[0]?.file_path || '',
-    attachmentType: row.notice_attachments?.[0]?.content_type?.includes('pdf') ? 'PDF' : 'Text',
+    attachmentType: row.notice_attachments?.[0]?.content_type?.includes('pdf') ? 'PDF' : row.notice_attachments?.[0] ? 'Image' : 'Text',
   }));
 }
 
@@ -72,8 +73,8 @@ export async function loadTestimonials() {
   const { data, error } = await requireClient().from('testimonials').select('*').eq('is_published', true).order('sort_order');
   if (error) throw error;
   return (data || []).map((row: any) => ({
-    id: row.id, name: row.student_name, role: row.class_level ? `Class ${row.class_level}` : 'Student',
-    comment: row.quote, image: row.photo_path, isActive: row.is_published,
+    id: row.id, name: row.student_name, role: row.author_role || (row.class_level ? `Class ${row.class_level}` : 'Student'),
+    comment: row.quote, rating: row.rating || 5, image: row.photo_path, isActive: row.is_published,
   }));
 }
 

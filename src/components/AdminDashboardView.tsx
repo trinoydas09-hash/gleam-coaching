@@ -268,7 +268,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
             const attachments = row.exam_attachments || [];
             const start = row.start_time ? String(row.start_time).slice(0, 5) : '10:00';
             const startParts = start.split(':').map(Number);
-            const endDate = new Date(2000, 0, 1, startParts[0] || 0, startParts[1] || 0 + (row.duration_minutes || 120));
+            const endDate = new Date(2000, 0, 1, startParts[0] || 0, (startParts[1] || 0) + (row.duration_minutes || 120));
             const endTime = endDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
             return {
               id: row.id, title: row.title, classLevel: 'Class ' + row.class_level,

@@ -13,6 +13,7 @@ import { StudentPortalView } from './components/StudentPortalView';
 import { ContactView } from './components/ContactView';
 import { AdminLoginView } from './components/AdminLoginView';
 import { AdminDashboardView } from './components/AdminDashboardView';
+import { supabase } from './lib/supabase';
 
 export default function App() {
   const [currentView, setCurrentView] = useState('home');
@@ -20,14 +21,50 @@ export default function App() {
   const [adminUser, setAdminUser] = useState<any>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('gleam_admin_token');
-    const user = localStorage.getItem('gleam_admin_user');
-    if (token && user) {
+    if (!supabase) return;
+
+    let active = true;
+    const syncAdminSession = async (session: any) => {
+      if (!session?.user) {
+        if (active) {
+          setIsAdminLoggedIn(false);
+          setAdminUser(null);
+        }
+        return;
+      }
+
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, role')
+        .eq('id', session.user.id)
+        .maybeSingle();
+
+      if (!active) return;
+      if (error || !profile || profile.role !== 'admin') {
+        setIsAdminLoggedIn(false);
+        setAdminUser(null);
+        if (currentView === 'admin-dashboard') setCurrentView('home');
+        return;
+      }
+
       setIsAdminLoggedIn(true);
-      try {
-        setAdminUser(JSON.parse(user));
-      } catch (e) {}
-    }
+      setAdminUser({
+        id: session.user.id,
+        email: session.user.email,
+        name: profile.full_name || session.user.email,
+        role: profile.role,
+      });
+    };
+
+    supabase.auth.getSession().then(({ data }) => syncAdminSession(data.session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      Promise.resolve().then(() => syncAdminSession(session));
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const handleAdminLoginSuccess = (admin: any) => {
@@ -35,15 +72,14 @@ export default function App() {
     setAdminUser(admin);
   };
 
-  const handleAdminLogout = () => {
-    localStorage.removeItem('gleam_admin_token');
-    localStorage.removeItem('gleam_admin_user');
+  const handleAdminLogout = async () => {
+    if (supabase) await supabase.auth.signOut();
     setIsAdminLoggedIn(false);
     setAdminUser(null);
     setCurrentView('home');
   };
 
-  // If admin dashboard is active, render dashboard without public navbar/footer
+  // If admin dashboard is active, render dashboard without public navbar/footer.
   if (currentView === 'admin-dashboard' && isAdminLoggedIn) {
     return <AdminDashboardView onLogout={handleAdminLogout} setCurrentView={setCurrentView} />;
   }

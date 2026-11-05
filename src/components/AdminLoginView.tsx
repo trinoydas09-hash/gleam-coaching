@@ -92,7 +92,7 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
     setLoading(true);
     try {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: 'https://gleam-coaching-preview-git-supabase-migration-foundation-trinoy.vercel.app',
+        redirectTo: 'https://gleam-coaching-preview-4gble9ykh-trinoy.vercel.app',
       });
       if (resetError) {
         setError(resetError.message);

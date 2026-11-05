@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { UserCheck, ShieldCheck, Award, BookOpen, Calendar, FileText, LogOut, CheckCircle2 } from 'lucide-react';
+import { UserCheck, LogOut, CheckCircle2 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 interface StudentPortalViewProps {
   setCurrentView: (view: string) => void;
@@ -18,71 +19,90 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrent
   const [activeTab, setActiveTab] = useState<'profile' | 'results' | 'exams' | 'routine' | 'notices'>('profile');
 
   useEffect(() => {
-    const saved = localStorage.getItem('gleam_verified_student');
-    if (saved) {
-      try {
-        const student = JSON.parse(saved);
-        setVerifiedStudent(student);
-        fetchStudentData(student.id);
-      } catch (e) {}
-    }
+    if (!supabase) return;
+
+    const loadPublicAcademicInfo = async () => {
+      const [examResponse, routineResponse, noticeResponse] = await Promise.all([
+        supabase.from('weekly_exams')
+          .select('id,title,class_level,subject,exam_date,start_time,duration_minutes,syllabus,status')
+          .eq('status', 'published')
+          .order('exam_date', { ascending: true }),
+        supabase.from('routines')
+          .select('id,title,class_level,description,status,published_at')
+          .eq('status', 'published')
+          .order('published_at', { ascending: false }),
+        supabase.from('notices')
+          .select('id,title,body,category,published_at')
+          .eq('status', 'published')
+          .order('published_at', { ascending: false }),
+      ]);
+
+      if (!examResponse.error) {
+        setExams((examResponse.data || []).map((exam: any) => ({
+          ...exam,
+          classLevel: exam.class_level,
+          examDate: exam.exam_date,
+          examTime: exam.start_time,
+        })));
+      }
+      if (!routineResponse.error) {
+        setRoutine((routineResponse.data || []).map((item: any) => ({
+          ...item,
+          classLevel: item.class_level,
+        })));
+      }
+      if (!noticeResponse.error) {
+        setNotices((noticeResponse.data || []).map((notice: any) => ({
+          ...notice,
+          content: notice.body,
+          date: notice.published_at,
+        })));
+      }
+    };
+
+    void loadPublicAcademicInfo();
   }, []);
 
-  const fetchStudentData = (id: string) => {
-    fetch(`/api/results?studentId=${id}`)
-      .then(res => res.json())
-      .then(data => setResults(data))
-      .catch(() => {});
-
-    fetch('/api/exams')
-      .then(res => res.json())
-      .then(data => setExams(data))
-      .catch(() => {});
-
-    fetch('/api/routine')
-      .then(res => res.json())
-      .then(data => setRoutine(data))
-      .catch(() => {});
-
-    fetch('/api/notices')
-      .then(res => res.json())
-      .then(data => setNotices(data))
-      .catch(() => {});
-  };
-
-  const handleVerify = (e: React.FormEvent) => {
+  const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!studentId || !pin) {
-      setError("Please enter both Student ID and Verification PIN.");
+    if (!studentId.trim() || !pin) {
+      setError("Please enter both Student ID and 6-digit Verification PIN.");
       return;
     }
+    if (!supabase) {
+      setError("Student Portal is not configured yet. Please contact the coaching office.");
+      return;
+    }
+
     setLoading(true);
     setError('');
-    fetch('/api/students/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studentId, pin })
-    })
-      .then(async res => {
-        const data = await res.json();
-        if (res.ok && data.success) {
-          setVerifiedStudent(data.student);
-          setResults(data.results);
-          localStorage.setItem('gleam_verified_student', JSON.stringify(data.student));
-          fetchStudentData(data.student.id);
-        } else {
-          setError(data.error || "Verification failed. Check your ID and PIN.");
-        }
-      })
-      .catch(() => setError("Network error during verification."))
-      .finally(() => setLoading(false));
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('student-portal-login', {
+        body: { studentId: studentId.trim(), pin },
+      });
+
+      if (invokeError) throw invokeError;
+      if (data?.success && data.student) {
+        setVerifiedStudent(data.student);
+        setResults(Array.isArray(data.results) ? data.results : []);
+        setPin('');
+        setActiveTab('profile');
+      } else {
+        setError(data?.error || "Verification failed. Check your ID and PIN.");
+      }
+    } catch {
+      setError("Unable to verify right now. Please try again or contact the coaching office.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('gleam_verified_student');
     setVerifiedStudent(null);
+    setResults([]);
     setStudentId('');
     setPin('');
+    setActiveTab('profile');
   };
 
   if (!verifiedStudent) {
@@ -121,7 +141,10 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrent
               </label>
               <input
                 type="password"
-                placeholder="4-digit PIN"
+                inputMode="numeric"
+                maxLength={6}
+                autoComplete="off"
+                placeholder="6-digit PIN"
                 value={pin}
                 onChange={e => setPin(e.target.value)}
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
@@ -143,10 +166,9 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrent
             </button>
           </form>
 
-          <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100 text-xs text-slate-600 space-y-1">
-            <p className="font-bold text-emerald-900">Demo Student IDs:</p>
-            <p>1. <strong className="text-slate-900">GLM1001</strong> (PIN: <strong className="text-slate-900">1234</strong>) - Tanvir Ahmed (Class 10)</p>
-            <p>2. <strong className="text-slate-900">GLM1002</strong> (PIN: <strong className="text-slate-900">5678</strong>) - Nusrat Jahan (Class 9)</p>
+          <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100 text-xs text-slate-600">
+            <p className="font-bold text-emerald-900">Need access?</p>
+            <p>Contact the Gleam Coaching office to receive your Student ID and 6-digit PIN. Demo credentials are not available.</p>
           </div>
         </div>
       </div>
@@ -165,7 +187,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrent
             <span className="px-3 py-1 bg-emerald-500 text-slate-950 text-xs font-bold rounded-lg">
               Active Student Dashboard
             </span>
-            <span className="text-xs text-emerald-300">Google Sheets Verified</span>
+            <span className="text-xs text-emerald-300">Verified Student Account</span>
           </div>
           <h1 className="text-3xl font-extrabold font-['Bricolage_Grotesque']">
             Welcome, {verifiedStudent.name}
@@ -237,7 +259,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrent
               </div>
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
                 <span className="text-xs text-slate-500 uppercase font-bold">Guardian Contact</span>
-                <p className="font-bold text-slate-900 text-base">{verifiedStudent.guardianPhone || '+880 1812-345678'}</p>
+                <p className="font-bold text-slate-900 text-base">{verifiedStudent.guardianPhone || 'Not provided'}</p>
               </div>
             </div>
           </div>
@@ -267,12 +289,12 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrent
                         <span className="text-base font-extrabold text-slate-900">{res.obtainedMarks} / {res.totalMarks}</span>
                       </div>
                       <div className="text-center">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">GPA</span>
-                        <span className="text-base font-extrabold text-emerald-700">{res.gpa}</span>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Grade</span>
+                        <span className="text-base font-extrabold text-emerald-700">{res.grade || "—"}</span>
                       </div>
                       <div className="text-center">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Position</span>
-                        <span className="text-base font-extrabold text-[#123B2A]">{res.position}</span>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Published</span>
+                        <span className="text-base font-extrabold text-[#123B2A]">{res.publishedAt ? new Date(res.publishedAt).toLocaleDateString() : "—"}</span>
                       </div>
                     </div>
                   </div>
@@ -295,8 +317,8 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrent
                     <span className="px-2.5 py-1 bg-amber-100 text-amber-800 font-semibold rounded-lg">{exam.status}</span>
                   </div>
                   <h3 className="text-xl font-bold text-slate-900">{exam.title}</h3>
-                  <p className="text-xs text-slate-600">Date: {exam.examDate} | Time: {exam.examTime}</p>
-                  <p className="text-xs bg-slate-50 p-3 rounded-xl border border-slate-100 text-slate-700">Syllabus: {exam.syllabus}</p>
+                  <p className="text-xs text-slate-600">Date: {exam.examDate || 'TBA'} | Time: {exam.examTime || 'TBA'}</p>
+                  <p className="text-xs bg-slate-50 p-3 rounded-xl border border-slate-100 text-slate-700">Syllabus: {exam.syllabus || "Not specified"}</p>
                 </div>
               ))}
             </div>
@@ -312,12 +334,10 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrent
               {classRoutine.map((item: any) => (
                 <div key={item.id} className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-3">
                   <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-lg">{item.day}</span>
-                    <span className="text-slate-500">{item.room}</span>
+                    <span className="font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-lg">Class {item.classLevel}</span>
                   </div>
-                  <h3 className="text-lg font-bold text-slate-900">{item.subject}</h3>
-                  <p className="text-xs text-slate-600">Instructor: <strong className="text-slate-900">{item.teacher}</strong></p>
-                  <p className="text-xs text-slate-600">Time: <strong className="text-slate-900">{item.startTime} - {item.endTime}</strong></p>
+                  <h3 className="text-lg font-bold text-slate-900">{item.title}</h3>
+                  <p className="text-xs text-slate-600">{item.description || "Published class routine."}</p>
                 </div>
               ))}
             </div>

@@ -1699,6 +1699,86 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
               ))}
             </div>
 
+            {routineSubTab === 'create' && (
+              <form onSubmit={handleSaveRoutine} className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 lg:p-8 space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-extrabold text-slate-900">{editingRoutine ? 'Edit Class Routine' : 'Create New Class Routine'}</h2>
+                    <p className="text-sm text-slate-500 mt-1">Add a class routine and publish it for students.</p>
+                  </div>
+                  <span className="text-xs font-bold text-emerald-800 bg-emerald-50 rounded-full px-3 py-2 h-fit">{editingRoutine ? 'EDIT MODE' : 'NEW ROUTINE'}</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold uppercase text-slate-600 mb-2">Routine Title *</label>
+                    <input required value={routineForm.title} onChange={e => setRoutineForm({ ...routineForm, title: e.target.value })} placeholder="Example: Class 10 Weekly Class Routine" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-600 mb-2">Class *</label>
+                    <select required value={routineForm.classLevel} onChange={e => setRoutineForm({ ...routineForm, classLevel: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                      {[6,7,8,9,10,11,12].map(level => <option key={level} value={`Class ${level}`}>Class {level}</option>)}
+                      <option value="All Classes">All Classes</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-600 mb-2">Academic Session</label>
+                    <input value={routineForm.academicSession} onChange={e => setRoutineForm({ ...routineForm, academicSession: e.target.value })} placeholder="2026 Academic Session" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-600 mb-2">Effective Date</label>
+                    <input type="date" value={routineForm.effectiveDate} onChange={e => setRoutineForm({ ...routineForm, effectiveDate: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-600 mb-2">Publication Status</label>
+                    <select value={routineForm.status} onChange={e => setRoutineForm({ ...routineForm, status: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                      <option value="Published">Published</option><option value="Draft">Save as Draft</option><option value="Archived">Archived</option>
+                    </select>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold uppercase text-slate-600 mb-2">Description</label>
+                    <textarea rows={3} value={routineForm.description} onChange={e => setRoutineForm({ ...routineForm, description: e.target.value })} placeholder="Add any instructions or details for students..." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm resize-y" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-600 mb-2">Upload Routine Images</label>
+                    <input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={e => Array.from(e.target.files || []).forEach(file => handleFileUpload(file, attachment => setRoutineForm(prev => ({ ...prev, imageAttachments: [...prev.imageAttachments, attachment] }))))} className="w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:font-bold file:text-emerald-800" />
+                    <div className="mt-2 space-y-1">{routineForm.imageAttachments.map((file: any, index: number) => <div key={index} className="flex items-center justify-between text-xs bg-slate-50 p-2 rounded-lg"><span className="truncate">{file.name}</span><button type="button" onClick={() => setRoutineForm(prev => ({ ...prev, imageAttachments: prev.imageAttachments.filter((_: any, i: number) => i !== index) }))} className="text-rose-600 font-bold ml-2">Remove</button></div>)}</div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-slate-600 mb-2">Upload Routine PDF</label>
+                    <input type="file" accept="application/pdf,.pdf" multiple onChange={e => Array.from(e.target.files || []).forEach(file => handleFileUpload(file, attachment => setRoutineForm(prev => ({ ...prev, pdfAttachments: [...prev.pdfAttachments, { ...attachment, fileType: 'pdf' }] }))))} className="w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:font-bold file:text-emerald-800" />
+                    <div className="mt-2 space-y-1">{routineForm.pdfAttachments.map((file: any, index: number) => <div key={index} className="flex items-center justify-between text-xs bg-slate-50 p-2 rounded-lg"><span className="truncate">{file.name}</span><button type="button" onClick={() => setRoutineForm(prev => ({ ...prev, pdfAttachments: prev.pdfAttachments.filter((_: any, i: number) => i !== index) }))} className="text-rose-600 font-bold ml-2">Remove</button></div>)}</div>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold uppercase text-slate-600 mb-2">Google Sheets URL (Optional)</label>
+                    <input type="url" value={routineForm.googleSheetUrl} onChange={e => setRoutineForm({ ...routineForm, googleSheetUrl: e.target.value })} placeholder="https://docs.google.com/spreadsheets/d/..." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm" />
+                    <p className="text-[11px] text-slate-500 mt-1">Paste a view-accessible Google Sheets link. It will be saved with this routine.</p>
+                  </div>
+                </div>
+                {uploading && <div className="text-xs font-bold text-emerald-700">Uploading attachment… {uploadProgress}%</div>}
+                <div className="flex flex-wrap justify-end gap-3 border-t pt-5">
+                  <button type="button" onClick={() => { setEditingRoutine(null); setRoutineSubTab('all'); }} className="px-5 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs">Cancel</button>
+                  <button type="submit" disabled={uploading} className="px-6 py-3 bg-[#123B2A] hover:bg-emerald-900 disabled:opacity-50 text-white font-bold rounded-xl text-xs">{editingRoutine ? 'Update Routine' : 'Create Class Routine'}</button>
+                </div>
+              </form>
+            )}
+
+            {(routineSubTab === 'upload-image' || routineSubTab === 'upload-pdf') && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-6">
+                <h2 className="font-extrabold text-lg text-slate-900">{routineSubTab === 'upload-image' ? 'Upload Image Routine' : 'Upload PDF Routine'}</h2>
+                <p className="text-sm text-slate-500 mt-1 mb-4">Create a routine first, then attach the {routineSubTab === 'upload-image' ? 'routine image' : 'PDF file'} in the form.</p>
+                <button type="button" onClick={() => { setEditingRoutine(null); setRoutineForm({ title: '', classLevel: 'Class 10', academicSession: '2026 Academic Session', description: '', effectiveDate: new Date().toISOString().split('T')[0], imageAttachments: [], pdfAttachments: [], googleSheetUrl: '', status: 'Published' }); setRoutineSubTab('create'); }} className="px-5 py-3 bg-[#123B2A] text-white rounded-xl text-xs font-bold">Create Routine and Attach File</button>
+              </div>
+            )}
+
+            {routineSubTab === 'sheets' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
+                <h2 className="font-extrabold text-lg text-slate-900">Google Sheets Routine</h2>
+                <p className="text-sm text-slate-500">Create a routine record and save the Google Sheets link for students to open.</p>
+                <input type="url" value={routineForm.googleSheetUrl} onChange={e => setRoutineForm({ ...routineForm, googleSheetUrl: e.target.value })} placeholder="https://docs.google.com/spreadsheets/d/..." className="w-full px-4 py-3 bg-slate-50 border rounded-xl text-sm" />
+                <button type="button" onClick={() => { setEditingRoutine(null); setRoutineForm({ ...routineForm, title: routineForm.title || 'Class Routine - Google Sheets', classLevel: routineForm.classLevel || 'Class 10' }); setRoutineSubTab('create'); }} className="px-5 py-3 bg-[#123B2A] text-white rounded-xl text-xs font-bold">Continue to Create Routine</button>
+              </div>
+            )}
+
             {(routineSubTab === 'all' || routineSubTab === 'published' || routineSubTab === 'archived') && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredRoutineList.map((rtItem: any) => (

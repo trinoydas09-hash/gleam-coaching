@@ -65,7 +65,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrent
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!studentId.trim() || !pin) {
+    if (!studentId.trim() || !/^\\d{6}$/.test(pin)) {
       setError("Please enter both Student ID and 6-digit Verification PIN.");
       return;
     }
@@ -116,7 +116,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrent
             Student Portal
           </h1>
           <p className="text-slate-600 text-sm">
-            Enter your Google Sheet enrolled Student ID and secure PIN to access your personal academic dashboard.
+            Enter your registered Student ID and secure PIN to access your personal academic dashboard.
           </p>
         </div>
 
@@ -146,7 +146,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrent
                 autoComplete="off"
                 placeholder="6-digit PIN"
                 value={pin}
-                onChange={e => setPin(e.target.value)}
+                onChange={e => setPin(e.target.value.replace(/\\D/g, '').slice(0, 6))}
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
               />
             </div>

@@ -17,6 +17,7 @@ import { supabase } from './lib/supabase';
 
 export default function App() {
   const [currentView, setCurrentView] = useState('home');
+  const [quickLoginCredentials, setQuickLoginCredentials] = useState<{ studentId: string; pin: string } | null>(null);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [adminUser, setAdminUser] = useState<any>(null);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(
@@ -103,7 +104,7 @@ export default function App() {
       />
 
       <main className="flex-1">
-        {currentView === 'home' && <HomeView setCurrentView={setCurrentView} onVerifyStudentQuick={() => setCurrentView('student-portal')} />}
+        {currentView === 'home' && <HomeView setCurrentView={setCurrentView} onVerifyStudentQuick={(studentId, pin) => { setQuickLoginCredentials({ studentId, pin }); setCurrentView('student-portal'); }} />}
         {currentView === 'about' && <AboutView />}
         {currentView === 'courses' && <CoursesView setCurrentView={setCurrentView} />}
         {currentView === 'teachers' && <TeachersView />}
@@ -111,7 +112,7 @@ export default function App() {
         {currentView === 'results' && <ResultsView setCurrentView={setCurrentView} />}
         {currentView === 'routine' && <RoutineView />}
         {currentView === 'notices' && <NoticesView />}
-        {currentView === 'student-portal' && <StudentPortalView setCurrentView={setCurrentView} />}
+        {currentView === 'student-portal' && <StudentPortalView setCurrentView={setCurrentView} quickLoginCredentials={quickLoginCredentials} onQuickLoginConsumed={() => setQuickLoginCredentials(null)} />}
         {currentView === 'contact' && <ContactView />}
         {currentView === 'admin-login' && (
           <AdminLoginView

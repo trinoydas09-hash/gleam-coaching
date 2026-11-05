@@ -922,118 +922,127 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
   });
 
   // ==================== 6. NOTICE BOARD MANAGEMENT ====================
-  const handleSaveNotice = (e: React.FormEvent) => {
+  const handleSaveNotice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!noticeForm.title.trim() || !noticeForm.content.trim()) return showError("Notice title and content are required.");
-    const url = editingNotice ? `/api/notices/${editingNotice.id}` : '/api/notices';
-    const method = editingNotice ? 'PUT' : 'POST';
-
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(noticeForm)
-    }).then(() => {
-      showSuccess(editingNotice ? "Notice updated!" : "Notice published!");
-      setEditingNotice(null);
-      setNoticeSubTab('all');
-      loadAllData();
-    });
+    if (!supabase) return showError("Supabase is not configured.");
+    try {
+      const payload = {
+        title: noticeForm.title.trim(), body: noticeForm.content.trim(), category: noticeForm.category,
+        target_class: noticeForm.targetClass, priority: noticeForm.priority, is_pinned: Boolean(noticeForm.isPinned),
+        google_sheet_url: noticeForm.googleSheetUrl.trim() || null,
+        status: noticeForm.status === 'Published' ? 'published' : 'draft',
+        published_at: noticeForm.date ? new Date(noticeForm.date + 'T00:00:00').toISOString() : new Date().toISOString(),
+        expires_at: noticeForm.expiryDate ? new Date(noticeForm.expiryDate + 'T23:59:59').toISOString() : null,
+        updated_at: new Date().toISOString(),
+      };
+      const result = editingNotice
+        ? await supabase.from('notices').update(payload).eq('id', editingNotice.id).select('id').single()
+        : await supabase.from('notices').insert(payload).select('id').single();
+      if (result.error) throw result.error;
+      const noticeId = result.data.id;
+      const { error: removeError } = await supabase.from('notice_attachments').delete().eq('notice_id', noticeId);
+      if (removeError) throw removeError;
+      if (noticeForm.attachmentUrl && ['PDF File', 'Image File'].includes(noticeForm.attachmentType)) {
+        const fileName = decodeURIComponent(noticeForm.attachmentUrl.split('/').pop()?.split('?')[0] || 'notice-attachment');
+        const isPdf = noticeForm.attachmentType === 'PDF File';
+        const contentType = isPdf ? 'application/pdf' : fileName.toLowerCase().endsWith('.png') ? 'image/png' : fileName.toLowerCase().endsWith('.webp') ? 'image/webp' : 'image/jpeg';
+        const { error } = await supabase.from('notice_attachments').insert({
+          notice_id: noticeId, file_path: noticeForm.attachmentUrl, file_name: fileName, content_type: contentType,
+        });
+        if (error) throw error;
+      }
+      showSuccess(editingNotice ? "Notice updated!" : "Notice saved successfully!");
+      setEditingNotice(null); setNoticeSubTab('all'); loadAllData();
+    } catch (error: any) {
+      showError("Unable to save notice: " + (error?.message || 'Unknown error'));
+    }
   };
 
-  const handleEditNoticeClick = (notItem: any) => {
-    setEditingNotice(notItem);
+  const handleEditNoticeClick = (item: any) => {
+    setEditingNotice(item);
     setNoticeForm({
-      title: notItem.title || '',
-      category: notItem.category || 'General Notice',
-      targetClass: notItem.targetClass || 'All Students',
-      date: notItem.date || new Date().toISOString().split('T')[0],
-      expiryDate: notItem.expiryDate || '',
-      priority: notItem.priority || 'Normal',
-      attachmentType: notItem.attachmentType || 'Text',
-      attachmentUrl: notItem.attachmentUrl || '',
-      googleSheetUrl: notItem.googleSheetUrl || '',
-      content: notItem.content || '',
-      isPinned: notItem.isPinned || false,
-      status: notItem.status || 'Published'
+      title: item.title || '', category: item.category || 'General Notice', targetClass: item.targetClass || 'All Students',
+      date: item.date || new Date().toISOString().split('T')[0], expiryDate: item.expiryDate || '',
+      priority: item.priority || 'Normal', attachmentType: item.attachmentType || 'Text',
+      attachmentUrl: item.attachmentUrl || '', googleSheetUrl: item.googleSheetUrl || '',
+      content: item.content || '', isPinned: Boolean(item.isPinned), status: item.status || 'Published',
     });
     setNoticeSubTab('create');
   };
 
-  const handleDeleteNoticeClick = (id: string, title: string) => {
-    if (confirm(`Are you sure you want to delete notice "${title}"?`)) {
-      fetch(`/api/notices/${id}`, { method: 'DELETE' }).then(() => {
-        showSuccess(`Notice deleted.`);
-        loadAllData();
-      });
-    }
+  const handleDeleteNoticeClick = async (id: string, title: string) => {
+    if (!confirm(`Are you sure you want to delete notice "${title}"?`)) return;
+    if (!supabase) return showError("Supabase is not configured.");
+    const { error } = await supabase.from('notices').delete().eq('id', id);
+    if (error) return showError("Unable to delete notice: " + error.message);
+    showSuccess("Notice deleted."); loadAllData();
   };
 
-  const handleTogglePinNotice = (notItem: any) => {
-    fetch(`/api/notices/${notItem.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isPinned: !notItem.isPinned })
-    }).then(() => {
-      showSuccess(notItem.isPinned ? "Notice unpinned." : "Notice pinned to top!");
-      loadAllData();
-    });
+  const handleTogglePinNotice = async (item: any) => {
+    if (!supabase) return showError("Supabase is not configured.");
+    const { error } = await supabase.from('notices').update({
+      is_pinned: !item.isPinned, updated_at: new Date().toISOString(),
+    }).eq('id', item.id);
+    if (error) return showError("Unable to update notice pin: " + error.message);
+    showSuccess(item.isPinned ? "Notice unpinned." : "Notice pinned to top!"); loadAllData();
   };
 
   const filteredNoticesList = notices.filter(n => {
-    const matchesSearch = n.title.toLowerCase().includes(noticeSearch.toLowerCase()) ||
-                          n.content.toLowerCase().includes(noticeSearch.toLowerCase());
+    const matchesSearch = (n.title || '').toLowerCase().includes(noticeSearch.toLowerCase()) ||
+      (n.content || '').toLowerCase().includes(noticeSearch.toLowerCase());
     const matchesCategory = noticeCategoryFilter === 'All' || n.category === noticeCategoryFilter;
     const matchesTab = noticeSubTab === 'published' ? n.status === 'Published' :
-                       noticeSubTab === 'drafts' ? n.status === 'Draft' :
-                       noticeSubTab === 'pinned' ? n.isPinned : true;
+      noticeSubTab === 'drafts' ? n.status === 'Draft' : noticeSubTab === 'pinned' ? n.isPinned : true;
     return matchesSearch && matchesCategory && matchesTab;
   });
 
   // ==================== 7. TESTIMONIALS MANAGEMENT ====================
-  const handleSaveTestimonial = (e: React.FormEvent) => {
+  const handleSaveTestimonial = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!testimonialForm.name.trim() || !testimonialForm.comment.trim()) return showError("Name and testimonial comment are required.");
-    const url = editingTestimonial ? `/api/testimonials/${editingTestimonial.id}` : '/api/testimonials';
-    const method = editingTestimonial ? 'PUT' : 'POST';
-
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(testimonialForm)
-    }).then(() => {
+    if (!supabase) return showError("Supabase is not configured.");
+    const payload = {
+      student_name: testimonialForm.name.trim(), author_role: testimonialForm.role.trim() || 'Student',
+      quote: testimonialForm.comment.trim(), rating: Number(testimonialForm.rating) || 5,
+      photo_path: testimonialForm.image || null, is_published: Boolean(testimonialForm.isActive),
+      sort_order: editingTestimonial ? Number(editingTestimonial.sortOrder || 0) : testimonials.length + 1,
+    };
+    try {
+      const result = editingTestimonial
+        ? await supabase.from('testimonials').update(payload).eq('id', editingTestimonial.id).select('id').single()
+        : await supabase.from('testimonials').insert(payload).select('id').single();
+      if (result.error) throw result.error;
       showSuccess(editingTestimonial ? "Testimonial updated!" : "Testimonial added!");
-      setEditingTestimonial(null);
-      setTestimonialSubTab('all');
-      loadAllData();
-    });
+      setEditingTestimonial(null); setTestimonialSubTab('all'); loadAllData();
+    } catch (error: any) {
+      showError("Unable to save testimonial: " + (error?.message || 'Unknown error'));
+    }
   };
 
-  const handleEditTestimonialClick = (ts: any) => {
-    setEditingTestimonial(ts);
+  const handleEditTestimonialClick = (item: any) => {
+    setEditingTestimonial(item);
     setTestimonialForm({
-      name: ts.name || '',
-      role: ts.role || 'Parent of Student',
-      comment: ts.comment || '',
-      rating: ts.rating || 5,
-      image: ts.image || '/assets/aistudio/image_4f62b769.png',
-      isActive: ts.isActive !== false
+      name: item.name || '', role: item.role || 'Student', comment: item.comment || '',
+      rating: Number(item.rating || 5), image: item.image || '', isActive: item.isActive !== false,
     });
     setTestimonialSubTab('add');
   };
 
-  const handleDeleteTestimonialClick = (id: string, name: string) => {
-    if (confirm(`Are you sure you want to delete testimonial by "${name}"?`)) {
-      fetch(`/api/testimonials/${id}`, { method: 'DELETE' }).then(() => {
-        showSuccess("Testimonial deleted.");
-        loadAllData();
-      });
-    }
+  const handleDeleteTestimonialClick = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete testimonial by "${name}"?`)) return;
+    if (!supabase) return showError("Supabase is not configured.");
+    const { error } = await supabase.from('testimonials').delete().eq('id', id);
+    if (error) return showError("Unable to delete testimonial: " + error.message);
+    showSuccess("Testimonial deleted."); loadAllData();
   };
 
-  const filteredTestimonialsList = testimonials.filter(t => 
-    t.name.toLowerCase().includes(testimonialSearch.toLowerCase()) ||
-    t.comment.toLowerCase().includes(testimonialSearch.toLowerCase())
+  const filteredTestimonialsList = testimonials.filter(t =>
+    (t.name || '').toLowerCase().includes(testimonialSearch.toLowerCase()) ||
+    (t.comment || '').toLowerCase().includes(testimonialSearch.toLowerCase())
   );
+
+
 
   // ==================== FAREWELL & GALLERY MANAGEMENT HANDLERS ====================
   const handleSaveAlbum = (e: React.FormEvent) => {

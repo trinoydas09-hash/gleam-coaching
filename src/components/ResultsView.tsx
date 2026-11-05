@@ -16,7 +16,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ setCurrentView }) => {
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!studentId.trim() || !/^\\d{6}$/.test(pin)) {
+    if (!studentId.trim() || !/^\d{6}$/.test(pin)) {
       setError("Please enter your Student ID and 6-digit Verification PIN.");
       return;
     }
@@ -55,7 +55,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ setCurrentView }) => {
           Student Result Verification
         </h1>
         <p className="text-slate-600 text-base">
-          Enter your Student ID and secure Verification PIN to view your weekly exam marks, GPA, and teacher remarks.
+          Enter your Student ID and secure Verification PIN to view your published examination marks, grade, and teacher remarks.
         </p>
       </div>
 
@@ -81,9 +81,12 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ setCurrentView }) => {
               </label>
               <input
                 type="password"
+                inputMode="numeric"
+                maxLength={6}
+                autoComplete="off"
                 placeholder="6-digit PIN"
                 value={pin}
-                onChange={e => setPin(e.target.value)}
+                onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
               />
             </div>
@@ -164,12 +167,12 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ setCurrentView }) => {
                         <span className="text-base font-extrabold text-slate-900">{res.obtainedMarks} / {res.totalMarks}</span>
                       </div>
                       <div className="text-center">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">GPA</span>
-                        <span className="text-base font-extrabold text-emerald-700">{res.gpa}</span>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Grade</span>
+                        <span className="text-base font-extrabold text-emerald-700">{res.grade || "—"}</span>
                       </div>
                       <div className="text-center">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Position</span>
-                        <span className="text-base font-extrabold text-[#123B2A]">{res.position}</span>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Published</span>
+                        <span className="text-xs font-bold text-[#123B2A]">{res.publishedAt ? new Date(res.publishedAt).toLocaleDateString() : "—"}</span>
                       </div>
                     </div>
                   </div>

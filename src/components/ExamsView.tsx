@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { loadExams } from '../lib/publicData';
 import { Calendar, Clock, BookOpen, CheckCircle2, AlertCircle, UserCheck, FileText, Download, Search } from 'lucide-react';
 
 export const ExamsView: React.FC = () => {
@@ -8,13 +9,7 @@ export const ExamsView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    fetch('/api/exams')
-      .then(res => res.json())
-      .then(data => {
-        const publishedOnly = data.filter((e: any) => e.isPublished !== false);
-        setExams(publishedOnly);
-      })
-      .catch(() => {});
+    loadExams().then(setExams).catch(() => setExams([]));
   }, []);
 
   const classFilters = ['All', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];

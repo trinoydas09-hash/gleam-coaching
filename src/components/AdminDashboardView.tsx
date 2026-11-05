@@ -1045,115 +1045,95 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
 
 
   // ==================== FAREWELL & GALLERY MANAGEMENT HANDLERS ====================
-  const handleSaveAlbum = (e: React.FormEvent) => {
+  const handleSaveAlbum = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!albumForm.title.trim()) return showError("Album Title is required.");
-    const url = editingAlbum ? `/api/farewell/albums/${editingAlbum.id}` : '/api/farewell/albums';
-    const method = editingAlbum ? 'PUT' : 'POST';
-
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(albumForm)
-    })
-      .then(async res => {
-        const data = await res.json();
-        if (res.ok) {
-          showSuccess(editingAlbum ? "Farewell album updated!" : "New Farewell album published!");
-          setEditingAlbum(null);
-          setFarewellSubTab('all');
-          loadAllData();
-        } else {
-          showError(data.error || "Failed to save album.");
-        }
-      })
-      .catch(err => showError("Error saving farewell album: " + err.message));
+    if (!supabase) return showError("Supabase is not configured.");
+    const status = albumForm.status === 'Published' ? 'published' : albumForm.status === 'Archived' ? 'archived' : 'draft';
+    const payload = {
+      school_level: albumForm.category, year: Number(albumForm.year), title: albumForm.title.trim(),
+      description: albumForm.description.trim() || null,
+      cover_photo_path: albumForm.coverImage || albumForm.photos[0]?.imageUrl || null,
+      is_published: status === 'published', status, updated_at: new Date().toISOString(),
+    };
+    try {
+      const result = editingAlbum
+        ? await supabase.from('farewell_albums').update(payload).eq('id', editingAlbum.id).select('id').single()
+        : await supabase.from('farewell_albums').insert({ ...payload, sort_order: 0 }).select('id').single();
+      if (result.error) throw result.error;
+      const albumId = result.data.id;
+      const { error: removeError } = await supabase.from('farewell_photos').delete().eq('album_id', albumId);
+      if (removeError) throw removeError;
+      if (albumForm.photos.length) {
+        const rows = albumForm.photos.map((photo: any, index: number) => ({
+          album_id: albumId, file_path: photo.imageUrl, caption: photo.caption || null, sort_order: index,
+        }));
+        const { error } = await supabase.from('farewell_photos').insert(rows);
+        if (error) throw error;
+      }
+      showSuccess(editingAlbum ? "Farewell album updated!" : "New Farewell album saved!");
+      setEditingAlbum(null); setFarewellSubTab('all'); loadAllData();
+    } catch (error: any) {
+      showError("Unable to save farewell album: " + (error?.message || 'Unknown error'));
+    }
   };
 
   const handleEditAlbumClick = (album: any) => {
     setEditingAlbum(album);
     setAlbumForm({
-      category: album.category || 'HSC',
-      year: parseInt(album.year || '2026', 10),
-      title: album.title || '',
-      description: album.description || '',
+      category: album.category || 'HSC', year: parseInt(album.year || '2026', 10),
+      title: album.title || '', description: album.description || '',
       coverImage: album.coverImage || '/assets/aistudio/image_4f62b769.png',
-      status: album.status || 'Published',
-      photos: album.photos || []
+      status: album.status || 'Published', photos: album.photos || [],
     });
     setFarewellSubTab('create');
   };
 
-  const handleDeleteAlbumClick = (id: string, title: string) => {
-    if (confirm(`Are you sure you want to delete farewell album "${title}"?`)) {
-      fetch(`/api/farewell/albums/${id}`, { method: 'DELETE' }).then(() => {
-        showSuccess(`Farewell album "${title}" deleted.`);
-        loadAllData();
-      });
-    }
+  const handleDeleteAlbumClick = async (id: string, title: string) => {
+    if (!confirm(`Are you sure you want to delete farewell album "${title}"?`)) return;
+    if (!supabase) return showError("Supabase is not configured.");
+    const { error: photosError } = await supabase.from('farewell_photos').delete().eq('album_id', id);
+    if (photosError) return showError("Unable to delete album photos: " + photosError.message);
+    const { error } = await supabase.from('farewell_albums').delete().eq('id', id);
+    if (error) return showError("Unable to delete album: " + error.message);
+    showSuccess(`Farewell album "${title}" deleted.`); loadAllData();
   };
 
-  const handleAddPhotosToAlbum = (files: FileList) => {
+  const handleAddPhotosToAlbum = async (files: FileList) => {
     if (!files || files.length === 0) return;
-    setUploading(true);
-    setUploadProgress(10);
-    const fileArray = Array.from(files);
-    let completed = 0;
-    const newPhotos: any[] = [];
-
-    fileArray.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const dataUrl = e.target?.result as string;
-        try {
-          const res = await fetch('/api/upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fileName: file.name, fileType: file.type, dataUrl })
-          });
-          const data = await res.json();
-          if (data.success) {
-            newPhotos.push({
-              id: 'p_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-              imageUrl: data.url,
-              caption: file.name.replace(/\.[^/.]+$/, "").replace(/_/g, " "),
-              displayOrder: (albumForm.photos.length + newPhotos.length + 1)
-            });
-          }
-        } catch (err) {}
-        completed++;
-        setUploadProgress(Math.round((completed / fileArray.length) * 100));
-        if (completed === fileArray.length) {
-          setUploading(false);
-          setUploadProgress(0);
-          setAlbumForm(prev => ({
-            ...prev,
-            photos: [...prev.photos, ...newPhotos],
-            coverImage: prev.coverImage || (newPhotos[0]?.imageUrl || prev.coverImage)
-          }));
-          showSuccess(`${newPhotos.length} photograph(s) uploaded successfully!`);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    if (!supabase) return showError("Supabase is not configured.");
+    setUploading(true); setUploadProgress(0);
+    try {
+      const list = Array.from(files);
+      const added: any[] = [];
+      for (let i = 0; i < list.length; i++) {
+        const file = list[i];
+        const imageUrl = await uploadPublicAsset(file, 'farewell-gallery', 10 * 1024 * 1024, ['image/jpeg', 'image/png', 'image/webp']);
+        added.push({
+          id: 'new-' + Date.now() + '-' + i + '-' + Math.random().toString(36).slice(2, 7),
+          imageUrl, caption: file.name.replace(/\.[^/.]+$/, '').replace(/_/g, ' '),
+        });
+        setUploadProgress(Math.round(((i + 1) / list.length) * 100));
+      }
+      setAlbumForm(prev => ({ ...prev, photos: [...prev.photos, ...added], coverImage: prev.coverImage || added[0]?.imageUrl || '' }));
+      showSuccess(added.length + " photograph(s) uploaded successfully!");
+    } catch (error: any) {
+      showError("Photo upload failed: " + (error?.message || 'Unknown error'));
+    } finally { setUploading(false); setUploadProgress(0); }
   };
 
   const handleDeletePhotoFromAlbum = (photoId: string) => {
     setAlbumForm(prev => {
-      const updatedPhotos = prev.photos.filter(p => p.id !== photoId);
-      const newCover = prev.coverImage === prev.photos.find(p => p.id === photoId)?.imageUrl
-        ? (updatedPhotos[0]?.imageUrl || '/assets/aistudio/image_4f62b769.png')
-        : prev.coverImage;
-      return { ...prev, photos: updatedPhotos, coverImage: newCover };
+      const updated = prev.photos.filter(p => p.id !== photoId);
+      const removed = prev.photos.find(p => p.id === photoId);
+      const cover = prev.coverImage === removed?.imageUrl ? (updated[0]?.imageUrl || '/assets/aistudio/image_4f62b769.png') : prev.coverImage;
+      return { ...prev, photos: updated, coverImage: cover };
     });
     showSuccess("Photo removed from album form.");
   };
 
   const handleUpdatePhotoCaption = (photoId: string, caption: string) => {
-    setAlbumForm(prev => ({
-      ...prev,
-      photos: prev.photos.map(p => p.id === photoId ? { ...p, caption } : p)
-    }));
+    setAlbumForm(prev => ({ ...prev, photos: prev.photos.map(p => p.id === photoId ? { ...p, caption } : p) }));
   };
 
   const handleSetCoverPhoto = (imageUrl: string) => {
@@ -1163,27 +1143,20 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
 
   const handleMovePhotoOrder = (photoId: string, direction: 'up' | 'down') => {
     setAlbumForm(prev => {
-      const idx = prev.photos.findIndex(p => p.id === photoId);
-      if (idx === -1) return prev;
-      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
-      if (targetIdx < 0 || targetIdx >= prev.photos.length) return prev;
-      const newPhotos = [...prev.photos];
-      const temp = newPhotos[idx];
-      newPhotos[idx] = newPhotos[targetIdx];
-      newPhotos[targetIdx] = temp;
-      return { ...prev, photos: newPhotos };
+      const index = prev.photos.findIndex(p => p.id === photoId);
+      const target = direction === 'up' ? index - 1 : index + 1;
+      if (index < 0 || target < 0 || target >= prev.photos.length) return prev;
+      const photos = [...prev.photos];
+      [photos[index], photos[target]] = [photos[target], photos[index]];
+      return { ...prev, photos };
     });
   };
 
   const filteredFarewellAlbumsList = farewellAlbums.filter(a => {
-    const matchesSearch = (a.title || '').toLowerCase().includes(farewellSearch.toLowerCase()) ||
-                          (a.description || '').toLowerCase().includes(farewellSearch.toLowerCase());
+    const matchesSearch = (a.title || '').toLowerCase().includes(farewellSearch.toLowerCase()) || (a.description || '').toLowerCase().includes(farewellSearch.toLowerCase());
     const matchesCategory = farewellCategoryFilter === 'All' || a.category === farewellCategoryFilter;
     const matchesYear = farewellYearFilter === 'All' || String(a.year) === farewellYearFilter;
-    const matchesTab = farewellSubTab === 'hsc' ? a.category === 'HSC' :
-                       farewellSubTab === 'ssc' ? a.category === 'SSC' :
-                       farewellSubTab === 'published' ? a.status === 'Published' :
-                       farewellSubTab === 'archived' ? a.status === 'Archived' : true;
+    const matchesTab = farewellSubTab === 'hsc' ? a.category === 'HSC' : farewellSubTab === 'ssc' ? a.category === 'SSC' : farewellSubTab === 'published' ? a.status === 'Published' : farewellSubTab === 'archived' ? a.status === 'Archived' : true;
     return matchesSearch && matchesCategory && matchesYear && matchesTab;
   });
 
@@ -2154,9 +2127,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
                         onChange={e => {
                           const file = e.target.files?.[0];
                           if (file) {
-                            handleFileUpload(file, (att) => {
-                              setNoticeForm(prev => ({ ...prev, attachmentUrl: att.url, attachmentType: att.fileType === 'pdf' ? 'PDF File' : 'Image File' }));
-                            });
+                            (async () => {
+                              setUploading(true);
+                              try {
+                                const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+                                const url = await uploadPublicAsset(file, 'notice-files', 20 * 1024 * 1024, isPdf ? ['application/pdf'] : ['image/jpeg', 'image/png', 'image/webp']);
+                                setNoticeForm(prev => ({ ...prev, attachmentUrl: url, attachmentType: isPdf ? 'PDF File' : 'Image File' }));
+                                showSuccess('Notice attachment uploaded.');
+                              } catch (error: any) {
+                                showError('Notice attachment upload failed: ' + (error?.message || 'Unknown error'));
+                              } finally { setUploading(false); }
+                            })();
                           }
                         }}
                         className="w-full px-3 py-2 bg-white border rounded-xl text-xs"
@@ -2383,9 +2364,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
                         onChange={e => {
                           const file = e.target.files?.[0];
                           if (file) {
-                            handleFileUpload(file, (att) => {
-                              setTestimonialForm(prev => ({ ...prev, image: att.url }));
-                            });
+                            (async () => {
+                              setUploading(true);
+                              try {
+                                const url = await uploadPublicAsset(file, 'website-assets', 10 * 1024 * 1024, ['image/jpeg', 'image/png', 'image/webp']);
+                                setTestimonialForm(prev => ({ ...prev, image: url }));
+                                showSuccess('Testimonial photo uploaded.');
+                              } catch (error: any) {
+                                showError('Testimonial photo upload failed: ' + (error?.message || 'Unknown error'));
+                              } finally { setUploading(false); }
+                            })();
                           }
                         }}
                         className="w-full px-3 py-2 bg-white border rounded-xl text-xs"

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { loadFarewellAlbums } from '../lib/publicData';
 import { BookOpen, Award, Users, CheckCircle2, MapPin, Calendar, Camera, ChevronLeft, ChevronRight, X, Image as ImageIcon, Sparkles, GraduationCap } from 'lucide-react';
 
 export const AboutView: React.FC = () => {
@@ -13,12 +14,7 @@ export const AboutView: React.FC = () => {
   const yearsList = [2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017];
 
   useEffect(() => {
-    fetch('/api/farewell/albums?status=Published')
-      .then(res => res.json())
-      .then(data => {
-        setAlbums(data || []);
-      })
-      .catch(() => {});
+    loadFarewellAlbums().then(setAlbums).catch(() => setAlbums([]));
   }, []);
 
   useEffect(() => {

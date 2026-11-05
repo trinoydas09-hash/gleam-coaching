@@ -324,7 +324,6 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({ setCurrent
                         {res.googleSheetUrl && <a href={res.googleSheetUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-100">Open Google Sheets Result</a>}
                       </div>
                     </div>
-                    </div>
                     <div className="flex items-center gap-6 bg-slate-50 px-6 py-4 rounded-2xl border border-slate-100 w-full md:w-auto justify-between md:justify-end">
                       <div className="text-center">
                         <span className="text-[10px] uppercase font-bold text-slate-400 block">Marks</span>

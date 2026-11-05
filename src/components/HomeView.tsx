@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BookOpen, GraduationCap, Calendar, Award, ArrowRight, ShieldCheck, CheckCircle2, Phone, MapPin, Search } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { loadTeachers, loadCourses, loadNotices, loadExams, loadTestimonials } from '../lib/publicData';
 
 interface HomeViewProps {
   setCurrentView: (view: string) => void;
@@ -7,7 +9,7 @@ interface HomeViewProps {
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({ setCurrentView, onVerifyStudentQuick }) => {
-  const [stats, setStats] = useState({ totalStudents: 150, activeStudents: 142, totalTeachers: 5, totalCourses: 7, totalExams: 18 });
+  const [stats, setStats] = useState({ totalStudents: 0, activeStudents: 0, totalTeachers: 0, totalCourses: 0, totalExams: 0 });
   const [teachers, setTeachers] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
   const [notices, setNotices] = useState<any[]>([]);
@@ -21,12 +23,45 @@ export const HomeView: React.FC<HomeViewProps> = ({ setCurrentView, onVerifyStud
   const [quickLoading, setQuickLoading] = useState(false);
 
   useEffect(() => {
-    fetch('/api/stats').then(res => res.json()).then(data => setStats(data)).catch(() => {});
-    fetch('/api/teachers').then(res => res.json()).then(data => setTeachers(data)).catch(() => {});
-    fetch('/api/courses').then(res => res.json()).then(data => setCourses(data)).catch(() => {});
-    fetch('/api/notices').then(res => res.json()).then(data => setNotices(data)).catch(() => {});
-    fetch('/api/exams').then(res => res.json()).then(data => setExams(data)).catch(() => {});
-    fetch('/api/testimonials').then(res => res.json()).then(data => setTestimonials(data)).catch(() => {});
+    let active = true;
+
+    const loadHomepageData = async () => {
+      if (!supabase) return;
+
+      const [teacherData, courseData, noticeData, examData, testimonialData] = await Promise.allSettled([
+        loadTeachers(),
+        loadCourses(),
+        loadNotices(),
+        loadExams(),
+        loadTestimonials(),
+      ]);
+
+      if (!active) return;
+      if (teacherData.status === 'fulfilled') setTeachers(teacherData.value);
+      if (courseData.status === 'fulfilled') setCourses(courseData.value);
+      if (noticeData.status === 'fulfilled') setNotices(noticeData.value);
+      if (examData.status === 'fulfilled') setExams(examData.value);
+      if (testimonialData.status === 'fulfilled') setTestimonials(testimonialData.value);
+
+      const [studentCount, teacherCount, courseCount, examCount] = await Promise.all([
+        supabase.from('students').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+        supabase.from('teachers').select('id', { count: 'exact', head: true }).eq('is_published', true),
+        supabase.from('courses').select('id', { count: 'exact', head: true }).eq('is_published', true).eq('status', 'active'),
+        supabase.from('weekly_exams').select('id', { count: 'exact', head: true }).eq('status', 'published'),
+      ]);
+
+      if (!active) return;
+      setStats({
+        totalStudents: studentCount.count || 0,
+        activeStudents: studentCount.count || 0,
+        totalTeachers: teacherCount.count || 0,
+        totalCourses: courseCount.count || 0,
+        totalExams: examCount.count || 0,
+      });
+    };
+
+    void loadHomepageData();
+    return () => { active = false; };
   }, []);
 
   const handleQuickVerify = (e: React.FormEvent) => {

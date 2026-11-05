@@ -3397,14 +3397,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
                 <h1 className="text-3xl font-extrabold text-slate-900 font-['Bricolage_Grotesque']">Verification Logs</h1>
                 <p className="text-slate-600 text-sm">Security audit logs for student login and result verification attempts.</p>
               </div>
-              {logs.length > 0 && (
-                <button onClick={() => fetch('/api/verification-logs', { method: 'DELETE' }).then(() => loadAllData())} className="px-4 py-2 bg-rose-50 text-rose-700 text-xs font-bold rounded-xl">Clear Logs</button>
-              )}
+
             </div>
 
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm overflow-x-auto">
               {logs.length === 0 ? (
-                <div className="text-center py-8 text-slate-500 text-xs">No verification attempts logged yet.</div>
+                <div className="text-center py-8 text-slate-500 text-xs">The admin log viewer is not connected to the Supabase audit table in this release.</div>
               ) : (
                 <table className="w-full text-left text-xs">
                   <thead>
@@ -3465,21 +3463,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
           </div>
         )}
 
-        {/* GOOGLE APPS SCRIPT TAB */}
+        {/* GOOGLE SHEETS INTEGRATION STATUS */}
         {activeTab === 'apps-script' && (
-          <div className="space-y-8">
-            <div>
-              <h1 className="text-3xl font-extrabold text-slate-900 font-['Bricolage_Grotesque']">Google Apps Script Integration</h1>
-              <p className="text-slate-600 text-sm">Copy and deploy this Apps Script code to verify student credentials directly from Google Sheets.</p>
-            </div>
-
-            <div className="bg-slate-900 text-emerald-300 p-6 rounded-3xl font-mono text-xs overflow-x-auto space-y-4">
-              <div className="flex justify-between items-center text-slate-400 text-[11px] border-b border-slate-800 pb-3">
-                <span>Code.gs — Google Apps Script Web App</span>
-                <button onClick={() => { navigator.clipboard.writeText(appsScriptCode); showSuccess("Apps Script code copied to clipboard!"); }} className="px-3 py-1 bg-emerald-900 text-emerald-200 rounded font-bold hover:bg-emerald-800">Copy Code</button>
-              </div>
-              <pre className="leading-relaxed whitespace-pre-wrap">{appsScriptCode}</pre>
-            </div>
+          <div className="bg-white rounded-3xl p-8 border border-amber-200 shadow-sm space-y-3">
+            <h1 className="text-2xl font-extrabold text-slate-900">Google Sheets Integration</h1>
+            <p className="text-sm text-slate-600">Automatic Google Sheets synchronization is not connected in this release. Student records, PIN verification, results, routines, and notices are currently managed through the secure Supabase database.</p>
+            <p className="text-sm text-slate-600">You can still save a view-accessible Google Sheets URL as a reference where the relevant form provides that option. The URL will not import or synchronize spreadsheet rows automatically.</p>
           </div>
         )}
       </main>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { loadNotices } from '../lib/publicData';
 import { Calendar, Bell, Pin, Search, FileText, Download, X, ExternalLink, ArrowRight } from 'lucide-react';
 
 export const NoticesView: React.FC = () => {
@@ -9,10 +10,7 @@ export const NoticesView: React.FC = () => {
   const [selectedNotice, setSelectedNotice] = useState<any>(null);
 
   useEffect(() => {
-    fetch('/api/notices?status=Published')
-      .then(res => res.json())
-      .then(data => setNotices(data))
-      .catch(() => {});
+    loadNotices().then(setNotices).catch(() => setNotices([]));
   }, []);
 
   const categories = [

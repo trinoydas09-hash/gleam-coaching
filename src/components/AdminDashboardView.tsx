@@ -285,7 +285,28 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
         });
     }
     fetch('/api/results').then(res => res.json()).then(data => setResults(data)).catch(() => {});
-    fetch('/api/routine').then(res => res.json()).then(data => setRoutine(data)).catch(() => {});
+    if (supabase) {
+      supabase.from('routines')
+        .select('*, routine_attachments(id,file_path,file_name,content_type,sort_order)')
+        .order('created_at', { ascending: false })
+        .then(({ data, error }) => {
+          if (error) return showError('Unable to load class routines: ' + error.message);
+          setRoutine((data || []).map((row: any) => {
+            const attachments = row.routine_attachments || [];
+            return {
+              id: row.id, title: row.title,
+              classLevel: row.class_level ? 'Class ' + row.class_level : 'All Classes',
+              academicSession: row.academic_session || '2026 Academic Session',
+              description: row.description || '',
+              effectiveDate: row.published_at ? String(row.published_at).slice(0, 10) : String(row.created_at || '').slice(0, 10),
+              googleSheetUrl: row.google_sheet_url || '',
+              status: row.status === 'archived' ? 'Archived' : row.status === 'published' ? 'Published' : 'Draft',
+              imageAttachments: attachments.filter((a: any) => !(a.content_type || '').includes('pdf')).map((a: any) => ({ name: a.file_name, url: a.file_path, fileType: 'image' })),
+              pdfAttachments: attachments.filter((a: any) => (a.content_type || '').includes('pdf')).map((a: any) => ({ name: a.file_name, url: a.file_path, fileType: 'pdf' })),
+            };
+          }));
+        });
+    }
     fetch('/api/notices').then(res => res.json()).then(data => setNotices(data)).catch(() => {});
     fetch('/api/testimonials').then(res => res.json()).then(data => setTestimonials(data)).catch(() => {});
     fetch('/api/farewell/albums').then(res => res.json()).then(data => setFarewellAlbums(data || [])).catch(() => {});
@@ -706,22 +727,57 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
   });
 
   // ==================== 5. CLASS ROUTINE MANAGEMENT ====================
-  const handleSaveRoutine = (e: React.FormEvent) => {
+  const handleSaveRoutine = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!routineForm.title.trim()) return showError("Routine Title is required.");
-    const url = editingRoutine ? `/api/routine/${editingRoutine.id}` : '/api/routine';
-    const method = editingRoutine ? 'PUT' : 'POST';
-
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(routineForm)
-    }).then(() => {
-      showSuccess(editingRoutine ? "Class routine updated successfully!" : "New Class Routine published!");
+    if (!supabase) return showError("Supabase is not configured. Please refresh and sign in again.");
+    const classLevelText = String(routineForm.classLevel || '').trim();
+    const classLevel = /all/i.test(classLevelText) ? null : Number(classLevelText.replace(/[^0-9]/g, ''));
+    if (classLevel !== null && (!Number.isInteger(classLevel) || classLevel < 1 || classLevel > 12)) return showError("Please select a valid class level.");
+    const status = String(routineForm.status).toLowerCase() === 'archived' ? 'archived' : String(routineForm.status).toLowerCase() === 'draft' ? 'draft' : 'published';
+    try {
+      const payload = {
+        title: routineForm.title.trim(),
+        class_level: classLevel,
+        academic_session: routineForm.academicSession?.trim() || null,
+        description: routineForm.description?.trim() || null,
+        google_sheet_url: routineForm.googleSheetUrl?.trim() || null,
+        status,
+        published_at: routineForm.effectiveDate ? new Date(routineForm.effectiveDate + 'T00:00:00').toISOString() : null,
+        updated_at: new Date().toISOString(),
+      };
+      const result = editingRoutine
+        ? await supabase.from('routines').update(payload).eq('id', editingRoutine.id).select('id').single()
+        : await supabase.from('routines').insert(payload).select('id').single();
+      if (result.error) throw result.error;
+      const routineId = result.data.id;
+      const attachments = [...(routineForm.pdfAttachments || []), ...(routineForm.imageAttachments || [])]
+        .filter((a: any) => a?.url)
+        .map((a: any, index: number) => ({
+          routine_id: routineId,
+          file_path: a.url,
+          file_name: a.name || 'Routine attachment',
+          content_type: a.fileType === 'pdf' || String(a.url).toLowerCase().includes('.pdf') ? 'application/pdf' : 'image/*',
+          sort_order: index,
+        }));
+      const { error: removeError } = await supabase.from('routine_attachments').delete().eq('routine_id', routineId);
+      if (removeError) throw removeError;
+      if (attachments.length) {
+        const { error: attachError } = await supabase.from('routine_attachments').insert(attachments);
+        if (attachError) throw attachError;
+      }
+      showSuccess(editingRoutine ? "Class routine updated successfully!" : "New Class Routine saved successfully!");
       setEditingRoutine(null);
+      setRoutineForm({
+        title: '', classLevel: 'Class 10', academicSession: '2026 Academic Session',
+        description: '', effectiveDate: new Date().toISOString().split('T')[0],
+        imageAttachments: [], pdfAttachments: [], googleSheetUrl: '', status: 'Published'
+      });
       setRoutineSubTab('all');
       loadAllData();
-    });
+    } catch (error: any) {
+      showError("Unable to save class routine: " + (error?.message || "Unknown error"));
+    }
   };
 
   const handleEditRoutineClick = (rtItem: any) => {
@@ -740,25 +796,31 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
     setRoutineSubTab('create');
   };
 
-  const handleDeleteRoutineClick = (id: string, title: string) => {
-    if (confirm(`Are you sure you want to delete routine "${title}"?`)) {
-      fetch(`/api/routine/${id}`, { method: 'DELETE' }).then(() => {
-        showSuccess(`Routine "${title}" deleted.`);
-        loadAllData();
-      });
+  const handleDeleteRoutineClick = async (id: string, title: string) => {
+    if (!supabase || !confirm(`Are you sure you want to delete routine "${title}"?`)) return;
+    try {
+      const { error: attachmentError } = await supabase.from('routine_attachments').delete().eq('routine_id', id);
+      if (attachmentError) throw attachmentError;
+      const { error } = await supabase.from('routines').delete().eq('id', id);
+      if (error) throw error;
+      showSuccess(`Routine "${title}" deleted.`);
+      loadAllData();
+    } catch (error: any) {
+      showError("Unable to delete class routine: " + (error?.message || "Unknown error"));
     }
   };
 
-  const handleToggleArchiveRoutine = (rtItem: any) => {
-    const newStatus = rtItem.status === 'Archived' ? 'Published' : 'Archived';
-    fetch(`/api/routine/${rtItem.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus })
-    }).then(() => {
-      showSuccess(`Routine status changed to ${newStatus}.`);
+  const handleToggleArchiveRoutine = async (rtItem: any) => {
+    if (!supabase) return showError("Supabase is not configured. Please refresh and sign in again.");
+    const newStatus = rtItem.status === 'Archived' ? 'published' : 'archived';
+    try {
+      const { error } = await supabase.from('routines').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', rtItem.id);
+      if (error) throw error;
+      showSuccess(`Routine status changed to ${newStatus === 'archived' ? 'Archived' : 'Published'}.`);
       loadAllData();
-    });
+    } catch (error: any) {
+      showError("Unable to update routine status: " + (error?.message || "Unknown error"));
+    }
   };
 
   const handleImportSheetRoutine = () => {

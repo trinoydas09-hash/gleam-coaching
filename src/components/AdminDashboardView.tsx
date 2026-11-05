@@ -307,9 +307,47 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
           }));
         });
     }
-    fetch('/api/notices').then(res => res.json()).then(data => setNotices(data)).catch(() => {});
-    fetch('/api/testimonials').then(res => res.json()).then(data => setTestimonials(data)).catch(() => {});
-    fetch('/api/farewell/albums').then(res => res.json()).then(data => setFarewellAlbums(data || [])).catch(() => {});
+    if (supabase) {
+      supabase.from('notices').select('*, notice_attachments(id,file_path,file_name,content_type)').order('published_at', { ascending: false })
+        .then(({ data, error }) => {
+          if (error) return showError('Unable to load notices: ' + error.message);
+          setNotices((data || []).map((row: any) => {
+            const attachment = row.notice_attachments?.[0];
+            return {
+              id: row.id, title: row.title, content: row.body || '', category: row.category || 'General Notice',
+              targetClass: row.target_class || 'All Students',
+              date: row.published_at ? String(row.published_at).slice(0, 10) : String(row.created_at || '').slice(0, 10),
+              expiryDate: row.expires_at ? String(row.expires_at).slice(0, 10) : '',
+              priority: row.priority || 'Normal', attachmentUrl: attachment?.file_path || '',
+              attachmentType: attachment?.content_type?.includes('pdf') ? 'PDF File' : attachment ? 'Image File' : (row.google_sheet_url ? 'Google Sheet Link' : 'Text'),
+              googleSheetUrl: row.google_sheet_url || '', isPinned: Boolean(row.is_pinned),
+              status: row.status === 'published' ? 'Published' : 'Draft',
+            };
+          }));
+        });
+      supabase.from('testimonials').select('*').order('sort_order', { ascending: true })
+        .then(({ data, error }) => {
+          if (error) return showError('Unable to load testimonials: ' + error.message);
+          setTestimonials((data || []).map((row: any) => ({
+            id: row.id, name: row.student_name || '', role: row.author_role || (row.class_level ? 'Class ' + row.class_level : 'Student'),
+            comment: row.quote || '', rating: Number(row.rating || 5), image: row.photo_path || '',
+            isActive: Boolean(row.is_published), sortOrder: row.sort_order || 0,
+          })));
+        });
+      supabase.from('farewell_albums').select('*, farewell_photos(id,file_path,caption,sort_order)')
+        .order('year', { ascending: false }).order('sort_order', { ascending: true })
+        .then(({ data, error }) => {
+          if (error) return showError('Unable to load farewell albums: ' + error.message);
+          setFarewellAlbums((data || []).map((row: any) => ({
+            id: row.id, category: row.school_level || 'HSC', year: row.year, title: row.title,
+            description: row.description || '', coverImage: row.cover_photo_path || '',
+            status: row.status === 'archived' ? 'Archived' : row.status === 'draft' || !row.is_published ? 'Draft' : 'Published',
+            updatedAt: row.updated_at || row.created_at,
+            photos: (row.farewell_photos || []).sort((a: any, b: any) => a.sort_order - b.sort_order)
+              .map((photo: any) => ({ id: photo.id, imageUrl: photo.file_path, caption: photo.caption || '', sortOrder: photo.sort_order })),
+          })));
+        });
+    }
     if (supabase) {
       supabase.from('students')
         .select('id,student_id,full_name,date_of_birth,gender,student_phone,email,address,class_level,group_name,session,admission_date,guardian_name,guardian_phone,relationship,guardian_address,status,created_at')
@@ -403,6 +441,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
       setUploadProgress(0);
       showError("File upload error: " + err.message);
     }
+  };
+
+  const uploadPublicAsset = async (file: File, bucket: string, maxBytes: number, allowedTypes: string[]) => {
+    if (!supabase) throw new Error('Supabase is not configured. Please refresh and sign in again.');
+    if (!allowedTypes.includes(file.type)) throw new Error('Unsupported file type.');
+    if (file.size > maxBytes) throw new Error('File is larger than the allowed size.');
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = 'admin/' + Date.now() + '-' + Math.random().toString(36).slice(2, 9) + '-' + safeName;
+    const { error } = await supabase.storage.from(bucket).upload(path, file, {
+      cacheControl: '3600', upsert: false, contentType: file.type,
+    });
+    if (error) throw error;
+    return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
   };
 
   // ==================== 1. TEACHERS MANAGEMENT ====================

@@ -258,7 +258,32 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
         })));
       });
     }
-    fetch('/api/exams').then(res => res.json()).then(data => setExams(data)).catch(() => {});
+    if (supabase) {
+      supabase.from('weekly_exams')
+        .select('*, teachers(name), exam_attachments(id,file_path,file_name,content_type)')
+        .order('exam_date', { ascending: true })
+        .then(({ data, error }) => {
+          if (error) return showError('Unable to load weekly exams: ' + error.message);
+          setExams((data || []).map((row: any) => {
+            const attachments = row.exam_attachments || [];
+            const start = row.start_time ? String(row.start_time).slice(0, 5) : '10:00';
+            const startParts = start.split(':').map(Number);
+            const endDate = new Date(2000, 0, 1, startParts[0] || 0, startParts[1] || 0 + (row.duration_minutes || 120));
+            const endTime = endDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            return {
+              id: row.id, title: row.title, classLevel: 'Class ' + row.class_level,
+              subject: row.subject, assignedTeacher: row.teachers?.name || '',
+              examDate: row.exam_date || new Date().toISOString().split('T')[0],
+              startTime: new Date('2000-01-01T' + start + ':00').toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+              endTime, totalMarks: Number(row.total_marks || 50), syllabus: row.syllabus || '',
+              instructions: row.instructions || '', status: row.status === 'published' ? 'Upcoming' : 'Draft',
+              isPublished: row.status === 'published',
+              pdfAttachments: attachments.filter((a: any) => (a.content_type || '').includes('pdf')).map((a: any) => ({ name: a.file_name, url: a.file_path, fileType: 'pdf' })),
+              imageAttachments: attachments.filter((a: any) => !(a.content_type || '').includes('pdf')).map((a: any) => ({ name: a.file_name, url: a.file_path, fileType: 'image' })),
+            };
+          }));
+        });
+    }
     fetch('/api/results').then(res => res.json()).then(data => setResults(data)).catch(() => {});
     fetch('/api/routine').then(res => res.json()).then(data => setRoutine(data)).catch(() => {});
     fetch('/api/notices').then(res => res.json()).then(data => setNotices(data)).catch(() => {});
@@ -501,22 +526,74 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
   });
 
   // ==================== 3. WEEKLY EXAMS MANAGEMENT ====================
-  const handleSaveExam = (e: React.FormEvent) => {
+  const handleSaveExam = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!examForm.title.trim()) return showError("Exam title is required.");
-    const url = editingExam ? `/api/exams/${editingExam.id}` : '/api/exams';
-    const method = editingExam ? 'PUT' : 'POST';
-
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(examForm)
-    }).then(() => {
+    if (!examForm.subject.trim()) return showError("Exam subject is required.");
+    if (!supabase) return showError("Supabase is not configured. Please refresh and sign in again.");
+    const classLevel = Number(String(examForm.classLevel).replace(/[^0-9]/g, ''));
+    if (!Number.isInteger(classLevel) || classLevel < 6 || classLevel > 12) return showError("Please select a valid class level.");
+    const parseClock = (value: string) => {
+      const match = value.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+      if (!match) return null;
+      let hour = Number(match[1]) % 12;
+      if (match[3].toUpperCase() === 'PM') hour += 12;
+      return { hour, minute: Number(match[2]) };
+    };
+    const start = parseClock(examForm.startTime);
+    const end = parseClock(examForm.endTime);
+    if (!start || !end) return showError("Please enter valid exam start and end times.");
+    let duration = (end.hour * 60 + end.minute) - (start.hour * 60 + start.minute);
+    if (duration <= 0) duration += 24 * 60;
+    try {
+      const { data: teacherRows, error: teacherError } = await supabase.from('teachers').select('id,name');
+      if (teacherError) throw teacherError;
+      const matchedTeacher = (teacherRows || []).find((t: any) => (t.name || '').trim().toLowerCase() === examForm.assignedTeacher.trim().toLowerCase());
+      const payload = {
+        title: examForm.title.trim(),
+        class_level: classLevel,
+        subject: examForm.subject.trim(),
+        teacher_id: matchedTeacher?.id || null,
+        exam_date: examForm.examDate || null,
+        start_time: `${String(start.hour).padStart(2, '0')}:${String(start.minute).padStart(2, '0')}:00`,
+        duration_minutes: duration,
+        syllabus: examForm.syllabus.trim() || null,
+        instructions: examForm.instructions.trim() || null,
+        total_marks: Number(examForm.totalMarks) || 50,
+        status: examForm.isPublished ? 'published' : 'draft',
+        updated_at: new Date().toISOString(),
+      };
+      const result = editingExam
+        ? await supabase.from('weekly_exams').update(payload).eq('id', editingExam.id).select('id').single()
+        : await supabase.from('weekly_exams').insert(payload).select('id').single();
+      if (result.error) throw result.error;
+      const examId = result.data.id;
+      const attachments = [...(examForm.pdfAttachments || []), ...(examForm.imageAttachments || [])];
+      const { error: deleteAttachmentError } = await supabase.from('exam_attachments').delete().eq('exam_id', examId);
+      if (deleteAttachmentError) throw deleteAttachmentError;
+      if (attachments.length) {
+        const attachmentRows = attachments.filter((a: any) => a?.url).map((a: any) => ({
+          exam_id: examId, file_path: a.url, file_name: a.name || 'Exam attachment',
+          content_type: a.fileType === 'pdf' || String(a.url).toLowerCase().includes('.pdf') ? 'application/pdf' : 'image/*',
+        }));
+        if (attachmentRows.length) {
+          const { error: attachmentError } = await supabase.from('exam_attachments').insert(attachmentRows);
+          if (attachmentError) throw attachmentError;
+        }
+      }
       showSuccess(editingExam ? "Examination updated!" : "Weekly Exam created!");
       setEditingExam(null);
+      setExamForm({
+        title: '', classLevel: 'Class 10', subject: '', assignedTeacher: 'Joy Gomes Jonerthon',
+        examDate: new Date().toISOString().split('T')[0], startTime: '10:00 AM', endTime: '12:00 PM',
+        totalMarks: 50, syllabus: '', instructions: 'Arrive 15 minutes prior to the exam with necessary stationery.',
+        pdfAttachments: [], imageAttachments: [], status: 'Upcoming', isPublished: true
+      });
       setExamSubTab('all');
       loadAllData();
-    });
+    } catch (error: any) {
+      showError("Unable to save weekly exam: " + (error?.message || "Unknown error"));
+    }
   };
 
   const handleEditExamClick = (ex: any) => {
@@ -532,20 +609,23 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onLogout
       totalMarks: ex.totalMarks || 50,
       syllabus: ex.syllabus || '',
       instructions: ex.instructions || '',
-      pdfAttachments: ex.pdfAttachments || [],
-      imageAttachments: ex.imageAttachments || [],
+      pdfAttachments: ex.pdfAttachments || ex.attachments?.filter((a: any) => a.fileType === 'pdf') || [],
+      imageAttachments: ex.imageAttachments || ex.attachments?.filter((a: any) => a.fileType !== 'pdf') || [],
       status: ex.status || 'Upcoming',
       isPublished: ex.isPublished !== false
     });
     setExamSubTab('create');
   };
 
-  const handleDeleteExamClick = (id: string, title: string) => {
-    if (confirm(`Are you sure you want to delete exam "${title}"?`)) {
-      fetch(`/api/exams/${id}`, { method: 'DELETE' }).then(() => {
-        showSuccess(`Exam "${title}" deleted.`);
-        loadAllData();
-      });
+  const handleDeleteExamClick = async (id: string, title: string) => {
+    if (!supabase || !confirm(`Are you sure you want to delete exam "${title}"?`)) return;
+    try {
+      const { error } = await supabase.from('weekly_exams').delete().eq('id', id);
+      if (error) throw error;
+      showSuccess(`Exam "${title}" deleted.`);
+      loadAllData();
+    } catch (error: any) {
+      showError("Unable to delete weekly exam: " + (error?.message || "Unknown error"));
     }
   };
 

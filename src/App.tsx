@@ -19,6 +19,9 @@ export default function App() {
   const [currentView, setCurrentView] = useState('home');
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [adminUser, setAdminUser] = useState<any>(null);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(
+    typeof window !== 'undefined' && window.location.hash.includes('type=recovery')
+  );
 
   useEffect(() => {
     if (!supabase) return;
@@ -57,7 +60,11 @@ export default function App() {
     };
 
     supabase.auth.getSession().then(({ data }) => syncAdminSession(data.session));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true);
+        setCurrentView('admin-login');
+      }
       Promise.resolve().then(() => syncAdminSession(session));
     });
 
@@ -70,16 +77,17 @@ export default function App() {
   const handleAdminLoginSuccess = (admin: any) => {
     setIsAdminLoggedIn(true);
     setAdminUser(admin);
+    setIsPasswordRecovery(false);
   };
 
   const handleAdminLogout = async () => {
     if (supabase) await supabase.auth.signOut();
     setIsAdminLoggedIn(false);
     setAdminUser(null);
+    setIsPasswordRecovery(false);
     setCurrentView('home');
   };
 
-  // If admin dashboard is active, render dashboard without public navbar/footer.
   if (currentView === 'admin-dashboard' && isAdminLoggedIn) {
     return <AdminDashboardView onLogout={handleAdminLogout} setCurrentView={setCurrentView} />;
   }
@@ -109,6 +117,7 @@ export default function App() {
           <AdminLoginView
             onAdminLoginSuccess={handleAdminLoginSuccess}
             setCurrentView={setCurrentView}
+            isPasswordRecovery={isPasswordRecovery}
           />
         )}
       </main>
